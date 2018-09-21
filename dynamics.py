@@ -94,7 +94,7 @@ class SISDynamicalSystem:
     
 
     '''
-    Simulates the dynamical system over the time period for a given dt
+    Simulates the dynamical system over the time period
     policy_fun must be of 'shape': (1, )        ->  (N, )
                            where   t in [0, T]  ->  control vector for all N nodes 
     '''
@@ -103,7 +103,6 @@ class SISDynamicalSystem:
 
         # time initialization
         self.ttotal = time['total']
-        self.dt = time['dt']
 
         # state variable initialization
         self.X = np.array([StochasticProcess(initial_condition=self.X_init[i]) for i in range(self.N)])
@@ -147,13 +146,12 @@ class SISDynamicalSystem:
                     s_rho = r'$\rho$: ' + str(self.rho) + ', '
                     s_gamma = r'$\gamma$: ' + str(self.gamma) + ', '
                     s_eta = r'$\eta$: ' + str(self.eta)
-                    s_dt = 'dt: ' + str(self.dt) + ', '
                     s_Qlam = r'Q$_{\lambda}$: ' + \
                         str(np.mean(self.Qlam)) + ', '
                     s_Qx = 'Q$_{X}$: ' + str(np.mean(self.Qx))
                     s = s_beta + s_gamma + '\n' \
                         + s_delta + s_rho + s_eta + '\n' \
-                        + s_dt + s_Qlam + s_Qx
+                        + s_Qlam + s_Qx
 
                     # plotting
                     plt.text(0.0, self.N, s, size=12,
