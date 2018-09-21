@@ -18,8 +18,8 @@ The 'saved' dictionary specifies a mapping from an integer to a filename and nam
 
 This file implements the class 'SISDynamicalSystem' which simulates the dynamical system specified the model under a given policy for a time window, returning the results.
 Initialize with the desired parameters.
-The '__simulate' is the core of the class, simulating the arrivals of the counting processes and updating the state variables accordingly. The argument 'policy_fun' is a function specifying the desired control policy. It needs to take a time t and return an array of treatment intensities over all nodes. Several other functions call __simulate to have shorthand calls for different policies, e.g. 'simulate_opt' or 'simulate_trivial' which simulate the system under the stochastic optimal control intensities or trivial control intensities, respectively. 
-The function '__getPoissonIntensities' returns the lambdas for Y, W, and N as defined by the model.
+The ' _simulate' is the core of the class, simulating the arrivals of the counting processes and updating the state variables accordingly. The argument 'policy_fun' is a function specifying the desired control policy. It needs to take a time t and return an array of treatment intensities over all nodes. Several other functions call _simulate to have shorthand calls for different policies, e.g. 'simulate_opt' or 'simulate_trivial' which simulate the system under the stochastic optimal control intensities or trivial control intensities, respectively. 
+The function '_getPoissonIntensities' returns the lambdas for Y, W, and N as defined by the model.
 ' __getOptPolicy(self, t)' implements the optimal policy at time t.
 
 # stochastic_processes.py
