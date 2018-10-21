@@ -40,7 +40,7 @@ class Evaluation:
         s_eta = r'$\eta$: ' + str(dict['eta'])
         s_Qlam = r'Q$_{\lambda}$: ' + \
             str(np.mean(dict['Qlam'])) + ', '
-        s_Qx = 'Q$_{X}$: ' + str(np.mean(dict['Qx']))
+        s_Qx = 'Q$_{X}$: ' + str(np.mean(dict['Qx'])) 
         s_sims = '# of simulations: ' + str(len(self.data[0]))
 
         s = s_beta + s_gamma + s_delta + s_rho + s_eta + '\n' \
@@ -72,7 +72,7 @@ class Evaluation:
 
     '''Computes integral from 0 to T of (Qx * X) dt for a given trial'''
 
-    def __computeIntX(self, trial, custom_eta=None):
+    def __computeIntX(self, trial, custom_eta=None, weight_by_Qx=True):
         hf = HelperFunc()
         if custom_eta is None:
             eta = trial['info']['eta']
@@ -82,7 +82,10 @@ class Evaluation:
         t, X = hf.step_sps_values_over_time(X_, summed=False)
 
         if X:
-            f_of_t = t, np.dot(Qx, np.array(X).T)
+            if weight_by_Qx:
+                f_of_t = t, np.dot(Qx, np.array(X).T)
+            else:
+                f_of_t = t, np.dot(np.ones(Qx.shape), np.array(X).T)
         else:
             f_of_t = t, 0
 
@@ -126,7 +129,7 @@ class Evaluation:
         return self.__integrateF(f_of_t, eta)
    
 
-    ''' *** Population statistics *** '''
+    ''' *** ANALYSIS *** '''
 
     '''Plots PDV of total incurred cost (i.e. the infinite horizon loss function)'''
 
@@ -148,7 +151,7 @@ class Evaluation:
             x = np.arange(len(means))
             width = 0.2
             ax.bar(x + width / 2, means, yerr=stddevs,
-                width=width, align='center', color='rgbkymc')
+                width=width, align='center', color='rgbkymcgbkymc')
             ax.set_xticks(x + width / 2)
             ax.set_xlabel('Policies')
             ax.set_xticklabels(self.descr)
@@ -174,172 +177,124 @@ class Evaluation:
             print(self.descr[j] + ':\t' + str(round(means[j], 3)) + '\t' + str(round(stddevs[j], 3)) )
         return 0
 
-    def present_discounted_loss_BOX(self, plot=False, save=False):
-        '''Compute integral for every heuristic'''
-        print("Computing present discounted loss integral for every heuristic...")
-        pdvs_by_heuristic = [[self.__computeIntX(trial) + self.__computeIntLambda(trial)
-                              for trial in tqdm(heuristic)] for heuristic in self.data]
-        print("...done.")
 
-        '''Plotting functionality'''
-        if plot:
-            fig = plt.figure(figsize=(10, 6), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-
-            # x = np.arange(len(means))
-            ax.boxplot(pdvs_by_heuristic, whis=[5, 95])
-            ax.set_xlabel('Policies')
-            ax.set_xticklabels(self.descr)
-            ax.set_ylabel('Present discounted loss')
-            ax.set_ylim((0, np.max(pdvs_by_heuristic)))
-
-            plt.title("Cumulative present discounted loss (=objective function) for all heuristics")
-
-            if save:
-                plt.savefig('plots/' + self.filename[:-4] + '/PDV_BOXplot.png', format='png', frameon=False)
-            else:
-                plt.show()
-
-        return 0
-
-    '''Plots TOTAL infection cost (Qx.X) per TOTAL time under treatment (1.H)'''
-
-    def infection_cost_per_time_under_treatment(self, plot=False, save=False):
-
-        '''Compute (total infection cost / total time under treatment) for every heuristic'''
-        print("Computing total infection cost / total time under treatment) for every heuristic...")
-        infection_cost_per_interventions_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0) / self.__computeIntH(trial, custom_eta=0.0)
-                                                          for trial in heuristic] for heuristic in self.data]
-        means, stddevs = [np.mean(rel_costs) for rel_costs in infection_cost_per_interventions_by_heuristic], \
-                         [np.std(rel_costs) for rel_costs in infection_cost_per_interventions_by_heuristic]
-        print("...done.")
-
-        '''Plotting functionality'''
-        if plot:
-            fig = plt.figure(figsize=(10, 6), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            x = np.arange(len(means))
-            width = 0.2
-            ax.bar(x + width / 2, means, yerr=stddevs,
-                width=width, align='center', color='rgbkymc')
-            ax.set_xticks(x + width / 2)
-            ax.set_xlabel('Policies')
-            ax.set_xticklabels(self.descr)
-            ax.set_ylabel('Relative infection cost incurred per time under treatment')
-
-            plt.title("Total infection cost Int(Qx.X) divided by total time under treatment Int(1.H) for all heuristics")
-
-            if save:
-                plt.savefig('plots/' + self.filename[:-4] + 
-                    '/infection_cost_per_time_under_treatment_plot.png', format='png', frameon=False)
-            else:
-                plt.show()
+    '''
+    Summarizes simulations in 3 plots
+        - Infection coverage (Int X(t) dt) - Total discrete interventions (Sum N(T))  
+        - Infection coverage (Int X(t) dt) - Treatment coverage (Int H(t) dt)     
+        - Infection events   (Sum Y(T))    - Total discrete interventions (Sum N(T))  
+    
+    '''
+    def infections_and_interventions_complete(self, size_tup = (15, 10), save=False):
         
-        print("\nRelative infection cost incurred per time under treatment (Mean, StdDev) \n")
-        for j in range(len(self.data)):
-            print(self.descr[j] + ':\t' + str(round(means[j], 3)) + '\t' + str(round(stddevs[j], 3)))
-        return 0
-    
-    '''Plots TOTAL infection cost (Qx.X) & TOTAL time under treatment (1.H)'''
 
-    def infection_cost_AND_time_under_treatment(self, plot=False, save=False):
-        '''Compute total infection cost and total time under treatment for every heuristic'''
-        print("Computing total infection cost and total time under treatment  for every heuristic...")
-        infection_cost_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0)  for trial in heuristic] for heuristic in self.data]
-        treatment_time_by_heuristic = [[self.__computeIntH(trial, custom_eta=0.0)  for trial in heuristic] for heuristic in self.data]
-        print("...done.")
-
-        means_infection, stddevs_infection = [np.mean(infections) for infections in infection_cost_by_heuristic], \
-            [np.std(infections) for infections in infection_cost_by_heuristic]
-        means_treatment, stddevs_treatment = [np.mean(treatments) for treatments in treatment_time_by_heuristic], \
-            [np.std(treatments) for treatments in treatment_time_by_heuristic]
-
-        '''Plotting functionality'''
-        if plot:
-            fig = plt.figure(figsize=(10, 6), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            x = np.arange(len(means_infection))
-            width = 0.2
-            ax.bar(x, means_infection, yerr=stddevs_infection,
-                   width=width, align='center', color='rgbkymc')
-            ax.set_xticks(x + width / 2)
-            ax.set_xlabel('Policies')
-            ax.set_xticklabels(self.descr)
-            ax.set_ylabel('Infection cost incurred [Left]')
-
-
-            ax2 = ax.twinx()
-            ax2.patch.set_visible(False)
-            ax2.bar(x + width, means_treatment, yerr=stddevs_treatment,
-                    width=width, align='center', color='rgbkymc', alpha=0.5)
-            ax2.set_ylabel('Time under treatment [Right]')
-
-            plt.title("Total infection cost Int(Qx.X) [Left] & Total time under treatment Int(1.H) [Right] for all heuristics")
-
-            if save:
-                plt.savefig('plots/' + self.filename[:-4] 
-                            + '/infection_cost_AND_time_under_treatment.png', format='png', frameon=False)
-            else:
-                plt.show()
-    
-        print(
-            "\nTotal infection cost and total time under treatment (Mean, StdDev) \n")
-        for j in range(len(self.data)):
-            print(self.descr[j] + ':\t' + str(round(means_infection[j], 3)) + '\t' + str(round(stddevs_infection[j], 3))
-                    + '\t ---- \t' + str(round(means_treatment[j], 3)) + '\t' + str(round(stddevs_treatment[j], 3)))
-        return 0
-    
-    '''Plots TOTAL infection cost (Qx.X) & TOTAL number of interventions (Sum of Nc[T])'''
-
-    def infection_cost_AND_total_interventions(self, plot=False, save=False):
-        '''Compute total infection cost and total number of interventions for every heuristic'''
-        print("Computing total infection cost and total number of interventions for every heuristic...")
+        '''Compute statistics for every heuristic'''
         hf = HelperFunc()
-        infection_cost_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0) for trial in heuristic] for heuristic in self.data]
-        # treatments_by_heuristic = [[np.sum(trial['Nc'][-1, :]) for trial in heuristic] for heuristic in self.data]
-        treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True) 
-                                    for trial in heuristic] for heuristic in self.data]
-        print("...done.")
+        intX_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
+                              for trial in heuristic] for heuristic in tqdm(self.data)]
+
+        intX_m = np.array([np.mean(h) for h in intX_by_heuristic])
+        intX_s = np.array([np.std(h) for h in intX_by_heuristic])
+
+        intH_by_heuristic = [[self.__computeIntH(trial, custom_eta=0.0)
+                              for trial in heuristic] for heuristic in tqdm(self.data)]
+
+        intH_m = np.array([np.mean(h) for h in intH_by_heuristic])
+        intH_s = np.array([np.std(h) for h in intH_by_heuristic])
+
+
+        Y_by_heuristic = [[hf.sps_values(trial['Y'], trial['info']['ttotal'], summed=True) 
+                           for trial in heuristic] for heuristic in tqdm(self.data)]
         
-        means_infection, stddevs_infection = [np.mean(infections) for infections in infection_cost_by_heuristic], \
-            [np.std(infections) for infections in infection_cost_by_heuristic]
-        means_treatment, stddevs_treatment = [np.mean(treatments) for treatments in treatments_by_heuristic], \
-            [np.std(treatments) for treatments in treatments_by_heuristic]
+        Y_m = np.array([np.mean(h) for h in Y_by_heuristic])
+        Y_s = np.array([np.std(h) for h in Y_by_heuristic])
+
+        N_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True) 
+                           for trial in heuristic] for heuristic in tqdm(self.data)]
+                            
+        N_m = np.array([np.mean(h) for h in N_by_heuristic])
+        N_s = np.array([np.std(h) for h in N_by_heuristic])
+
+        x = np.arange(len(intX_m))
+        n = 50 # trials per simulation
 
         '''Plotting functionality'''
-        if plot:
-            fig = plt.figure(figsize=(10, 6), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            x = np.arange(len(means_infection))
-            width = 0.2
-            ax.bar(x, means_infection, yerr=stddevs_infection,
-                   width=width, align='center', color='rgbkymc')
-            ax.set_xticks(x + width / 2)
-            ax.set_xlabel('Policies')
-            ax.set_xticklabels(self.descr)
-            ax.set_ylabel('Infection cost incurred [Left]')
+        plt.rc('text', usetex=True)
+        plt.rc('font', family='serif')
 
-            ax2 = ax.twinx()
-            ax2.patch.set_visible(False)
-            ax2.bar(x + width, means_treatment, yerr=stddevs_treatment,
-                    width=width, align='center', color='rgbkymc', alpha=0.5)
-            ax2.set_ylabel('Number of interventions [Right]')
-           
-            plt.title("Total infection cost Int(Qx.X) [Left] & Total number of interventions (Sum of N[Final time]) [Right] for all heuristics")
+        fig = plt.figure(figsize=(12, 8), facecolor='white')
+        # fig = plt.figure()
 
-            if save:
-                plt.savefig(
-                    'plots/' + self.filename[:-4] 
-                    + '/infection_cost_AND_total_interventions.png', format='png', frameon=False)
-            else:
-                plt.show()
+        # 1 - Infection coverage (Int X(t) dt) - Total discrete interventions (Sum N(T))
+        ax = fig.add_subplot(2, 1, 1, frameon=False)
         
-        print(
-            "\nTotal infection cost and total number of interventions (Mean, StdDev) \n")
-        for j in range(len(self.data)):
-            print(self.descr[j] + ':\t' + str(round(means_infection[j], 3)) + '\t' + str(round(stddevs_infection[j], 3))
-                    + '\t ---- \t' + str(round(means_treatment[j], 3)) + '\t' + str(round(stddevs_treatment[j], 3)))
-        return 0
+        width = 0.2
+        ax.bar(x, intX_m, yerr=intX_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc')
+        ax.set_xticks(x + width / 2)
+        ax.set_xlabel(r'Policies')
+        ax.set_xticklabels(self.descr)
+        ax.set_ylabel(r'Infection coverage $\int_{t_0}^{t_f} \mathbf{X}(t) dt$')
+
+        ax2 = ax.twinx()
+        ax2.patch.set_visible(False)
+        ax2.bar(x + width, N_m, yerr=N_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc', alpha=0.5)
+        ax2.set_ylabel(r'Interventions $\sum_{i=1}^{|nodes|} \mathbf{N}_i(t_f)$')
+        
+        plt.title(r"Infection coverage and discrete interventions")
+
+        # 2 - Infection coverage (Int X(t) dt) - Treatment coverage (Int H(t) dt)
+        ax = fig.add_subplot(2, 2, 3, frameon=False)
+        
+        width = 0.2
+        ax.bar(x, intX_m, yerr=intX_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc')
+        ax.set_xticks(x + width / 2)
+        ax.set_xlabel(r'Policies')
+        ax.set_xticklabels(['']*len(self.descr))
+        ax.set_ylabel(r'Infection coverage $\int_{t_0}^{t_f} \mathbf{X}(t) dt$')
+
+        ax2 = ax.twinx()
+        ax2.patch.set_visible(False)
+        ax2.bar(x + width, intH_m, yerr=intH_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc', alpha=0.5)
+        ax2.set_ylabel(r'Treatment coverage $\int_{t_0}^{t_f} \mathbf{H}(t) dt$')
+        
+        plt.title(r"Infection coverage and treatment coverage")
+
+        # 3 - Infection events   (Sum Y(T))    - Total discrete interventions (Sum N(T))
+        ax = fig.add_subplot(2, 2, 4, frameon=False)
+        
+        width = 0.2
+        ax.bar(x, intX_m, yerr=intX_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc')
+        ax.set_xticks(x + width / 2)
+        ax.set_xlabel(r'Policies')
+        ax.set_xticklabels(['']*len(self.descr))
+        ax.set_ylabel(r'Infections $\sum_{i=1}^{|nodes|} \mathbf{Y}_i(t_f)$')
+
+        ax2 = ax.twinx()
+        ax2.patch.set_visible(False)
+        ax2.bar(x + width, N_m, yerr=N_s / np.sqrt(n),
+                width=width, align='center', color='rgbkymcgbkymc', alpha=0.5)
+        ax2.set_ylabel(r'Interventions $\sum_{i=1}^{|nodes|} \mathbf{N}_i(t_f)$')
+        
+        plt.title(r"Infection events and discrete interventions")
+
+        if save:
+            dpi = 400
+            plt.tight_layout()
+            fig = plt.gcf()  # get current figure
+            fig.set_size_inches(size_tup)  # width, height
+            plt.savefig(
+                'plots/' + self.filename[:-4] 
+                + '/infections_and_interventions_complete.png', format='png', frameon=False, dpi=dpi)
+        else:
+            plt.show()
+    
+    
+        return ((intX_m, intX_s),(N_m, N_s), (intH_m, intH_s), (Y_m, Y_s))
 
     '''Plots TOTAL infection cost (Qx.X) & TOTAL intervention effort (Qlam.u^2)'''
 
@@ -362,7 +317,7 @@ class Evaluation:
             x = np.arange(len(means_infection))
             width = 0.2
             ax.bar(x, means_infection, yerr=stddevs_infection,
-                   width=width, align='center', color='rgbkymc')
+                   width=width, align='center', color='rgbkymcgbkymc')
             ax.set_xticks(x + width / 2)
             ax.set_xlabel('Policies')
             ax.set_xticklabels(self.descr)
@@ -372,7 +327,7 @@ class Evaluation:
             ax2 = ax.twinx()
             ax2.patch.set_visible(False)
             ax2.bar(x + width, means_treatment, yerr=stddevs_treatment,
-                    width=width, align='center', color='rgbkymc', alpha=0.5)
+                    width=width, align='center', color='rgbkymcgbkymc', alpha=0.5)
             ax2.set_ylabel('Treatment effort [Right]')
 
 
@@ -392,6 +347,53 @@ class Evaluation:
                     + '\t ---- \t' + str(round(means_treatment[j], 3)) + '\t' + str(round(stddevs_treatment[j], 3)))
         return 0
 
+    
+    '''Return total number of interventions & peak and average treatment intensities for every heuristic'''
+
+    def summarize_interventions_and_intensities(self):
+
+        hf = HelperFunc()
+        treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True)
+                                    for trial in heuristic] for heuristic in self.data]
+
+        raw_intensities = [[[hf.sps_values(trial['u'], t, summed=True) for t in hf.all_arrivals(trial['u'])]
+                             for trial in heuristic] for heuristic in self.data]
+
+        treatm_ave_intensity_by_heuristic = [[np.mean(data_row) for data_row in heuristic] 
+                                              for heuristic in raw_intensities]
+
+        treatm_max_intensity_by_heuristic = [[np.max(data_row) for data_row in heuristic] 
+                                              for heuristic in raw_intensities]
+        
+
+        means_treatment, stddevs_treatment = \
+            [np.mean(treatments) for treatments in treatments_by_heuristic], \
+            [np.std(treatments) for treatments in treatments_by_heuristic]
+        
+        means_ave_intensity, stddevs_ave_intensity = \
+            [np.mean(treatments) for treatments in treatm_ave_intensity_by_heuristic], \
+            [np.std(treatments) for treatments in treatm_ave_intensity_by_heuristic]
+
+        means_max_intensity, stddevs_max_intensity = \
+            [np.mean(treatments) for treatments in treatm_max_intensity_by_heuristic], \
+            [np.std(treatments) for treatments in treatm_max_intensity_by_heuristic]
+
+        print("\n Total treatments")
+        for j in range(len(self.data)):
+            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_treatment[j], 4), round(stddevs_treatment[j], 4)))
+
+        print("\n Average treatment intensities")
+        for j in range(len(self.data)):
+            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_ave_intensity[j], 4), round(stddevs_ave_intensity[j], 4)))
+
+        print("\n Peak treatment intensities")
+        for j in range(len(self.data)):
+            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_max_intensity[j], 4), round(stddevs_max_intensity[j], 4)))
+
+        return ((means_treatment, stddevs_treatment), 
+                (means_ave_intensity, stddevs_ave_intensity), 
+                (means_max_intensity, stddevs_max_intensity))
+
 
     '''Simulation summary'''
 
@@ -408,7 +410,7 @@ class Evaluation:
 
         hf = HelperFunc()
 
-        colors = 'rgbkymc'
+        colors = 'rgbkymcgbkymc'
         for ind, heuristic in enumerate(self.data):
 
             tspace = np.arange(0.0, heuristic[0]['info']['ttotal'], granularity)
@@ -465,7 +467,7 @@ class Evaluation:
 
         hf = HelperFunc()
 
-        colors = 'rgbkymc'
+        colors = 'rgbkymcgbkymc'
         for ind, heuristic in enumerate(self.data):
 
             tspace = np.arange(0.0, heuristic[0]['info']['ttotal'], granularity)
@@ -507,3 +509,161 @@ class Evaluation:
             plt.show()
 
         return 0
+
+
+
+    '''Debugging playground'''
+
+    def debug(self):
+
+        print('Debugging..')
+
+        hf = HelperFunc()
+        # infections_by_heuristic1 = [[self.__computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
+        #                             for trial in heuristic] for heuristic in self.data]
+        # infections_by_heuristic2 = [[hf.sps_values(trial['Y'], trial['info']['ttotal'], summed=True)
+        #                              for trial in heuristic] for heuristic in self.data]
+        # treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True) 
+        #                             for trial in heuristic] for heuristic in self.data]
+        # print("...done.")
+        
+        # infections = np.array(infections_by_heuristic2)
+        # treatments = np.array(treatments_by_heuristic)
+        # diff = infections - treatments
+
+        trial = self.data[0][2]
+        infections = np.array(hf.sps_values(trial['Y'], trial['info']['ttotal'], summed=False))
+        infected_at_0 = np.array(hf.sps_values(trial['X'], 0.0, summed=False))
+        infections_at_0 = np.array(hf.sps_values(trial['Y'], 0.0, summed=False))
+        treatments = np.array(hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=False))
+
+        print(infections)
+        print(infected_at_0)
+        print(infections_at_0)
+        print(treatments)
+
+        diff = infections - treatments
+        print(diff)
+
+
+
+
+
+
+'''
+
+Class that plots results of multiple dynamical system simulations
+
+'''
+
+
+class MultipleEvaluations:
+
+    def __init__(self, saved, all_selected, multi_summary):
+
+        self.saved = saved 
+        self.all_selected = all_selected 
+        self.multi_summary = multi_summary
+
+        # create directory for plots
+        directory = 'plots_multi/' + str(self.all_selected)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+    '''Compares infections along Qx axis (assuming Qlambda = const = 1.0)'''
+
+    def compare_infections(self, size_tup = (5,5),save=True):
+        
+        
+        d = self.multi_summary.get('infections_and_interventions', None)
+        eval_objs = self.multi_summary.get('eval_obj', None)
+
+        if d is not None and eval_objs is not None:
+            
+            keys = [self.saved[selected][0] for selected in self.all_selected]
+            descriptions = [self.saved[selected][1] for selected in self.all_selected]
+
+            
+            # assumes data had same methods tested
+            Qx_axis = [np.mean(eval_objs[key].data[0][0]['info']['Qx'])
+                       for key in keys]
+            infections_axis = {name : [] for name in descriptions[0]} 
+            infections_axis_std = {name : [] for name in descriptions[0]} 
+
+            interventions_axis = {name : [] for name in descriptions[0]} 
+            interventions_axis_std = {name : [] for name in descriptions[0]} 
+
+            # transfrom stddev into std error
+            n = 30 # trials per simulation
+
+            # gather data from inputs
+            for i, name in enumerate(descriptions[0]):
+                for key in keys:
+                    # d[key] = ((intX_m, intX_s), (N_m, N_s), (intH_m, intH_s), (Y_m, Y_s))
+                    infections_axis[name].append(d[key][0][0][i])
+                    infections_axis_std[name].append(d[key][0][1][i])
+                    interventions_axis[name].append(d[key][1][0][i])
+                    interventions_axis_std[name].append(d[key][1][1][i])
+            
+
+            '''Plotting functionality'''
+
+            plt.rc('text', usetex=True)
+            plt.rc('font', family='serif')
+
+            # Set up figure.
+            fig = plt.figure(figsize=(12, 8), facecolor='white')
+            ax = fig.add_subplot(111, frameon=False)
+            
+            # ax.set_xscale("log", nonposx='clip')
+            # plt.xscale('log')
+
+            plt.cla()
+
+            hf = HelperFunc()
+
+            colors = 'rgbkymcgbkymc'
+            legend = []
+            max_infected = 0
+            for ind, name in enumerate(descriptions[0]):
+                legend.append(name)
+
+                # linear axis
+                ax.plot(Qx_axis, infections_axis[name], color=colors[ind])
+                ax.fill_between(Qx_axis, 
+                                np.array(infections_axis[name]) - np.array(interventions_axis_std[name]  / np.sqrt(n)), 
+                                np.array(infections_axis[name]) + np.array(interventions_axis_std[name]  / np.sqrt(n)),
+                                alpha=0.3, edgecolor=colors[ind], facecolor=colors[ind],
+                                linewidth=0)
+
+                # ax.errorbar(Qx_axis, infections_axis[name], yerr=interventions_axis_std[name])
+
+                if max(infections_axis[name]) > max_infected:
+                    max_infected = max(infections_axis[name])
+
+            ax.set_xlim([0.7, max(Qx_axis)])
+            ax.set_xlabel(r'$Q_x$')
+            ax.set_ylim([0, 1.3 * max_infected])
+            ax.set_ylabel(r'Infection coverage $\int_{t_0}^{t_f} \mathbf{X}(t) dt$')
+            ax.legend(legend)
+
+            # ax.set_xscale("log", nonposx='clip')
+
+
+            if save:
+                dpi = 400
+                # plt.tight_layout()
+                fig = plt.gcf()  # get current figure
+                fig.set_size_inches(size_tup)  # width, height
+                plt.savefig(
+                    'plots_multi/' + str(self.all_selected) + \
+                    '/infections_fair_comparison.png', frameon=False, format='png', dpi=dpi)  #
+            else:
+                plt.show()                
+
+        else:
+            print('Error: Missing data.')
+            exit(1)
+
+
+
