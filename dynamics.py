@@ -8,6 +8,7 @@ from tqdm import tqdm
 import scipy.optimize
 from time import sleep
 from functools import reduce
+import networkx as nx
 
 from stochastic_processes import StochasticProcess, CountingProcess
 from helpers import HelperFunc 
@@ -35,7 +36,8 @@ class SISDynamicalSystem:
 
         # CURE
         self.is_waiting = True
-        self.is_following_path = False
+        self.is_path_following_phase = False
+        self.G = nx.from_numpy_matrix(A, parallel_edges=False, create_using=None)
 
         if len(X_init) == N and \
                 A.shape[0] == N and \
@@ -145,8 +147,8 @@ class SISDynamicalSystem:
     intensity on one node as this is the control signal
     '''
 
-    def simulate_CURE_policy(self, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getCUREPolicy(const, t), time, plot, plot_update)
+    def simulate_CURE_policy(self, frontld_dict, const, time, plot=False, plot_update=1.0):
+        return self.__simulate(lambda t: self.__getCUREPolicy(frontld_dict, const, t), time, plot, plot_update)
 
 
 
@@ -157,8 +159,8 @@ class SISDynamicalSystem:
     and as such we control the _intensity_ of intervening, not the intensity of the treatment itself
     '''
 
-    def simulate_MCM(self, resource_const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMCMPolicy(resource_const, t), time, plot, plot_update)
+    def simulate_MCM(self, frontld_dict, resource_const, time, plot=False, plot_update=1.0):
+        return self.__simulate(lambda t: self.__getMCMPolicy(frontld_dict, resource_const, t), time, plot, plot_update)
     
 
     '''
@@ -697,23 +699,129 @@ class SISDynamicalSystem:
 
         return u
 
+
+    '''Takes G, bag A, bag B, with A subseteq B
+       returns crusade (w_0, w_1, ..., w_k) (sequence of bags)
+          w_0 = A
+          w_k = 0
+          one node removed every step
+       optimal means width of crusade is minimized
+    '''
+
+    def find_opt_crusade(self, G, bag_A):
+
+        lookup_table = dict()
+
+        def impedance(bag, crusade):
+                        
+            if len(bag) == 1:
+                # recursion bottoms out
+                return nx.cut_size(G, bag), [bag]
+            else:
+                # memoization: check if bag was already seen
+                t = tuple(bag)
+                if t in lookup_table:
+                    return lookup_table[t][0], lookup_table[t][1]
+
+                else:
+                    all_impedances = []
+                    all_crusades = []
+                    
+                    for i in range(len(bag)):
+                        bag_minus_i = np.delete(bag, i).tolist()
+                        im, cr = impedance(bag_minus_i, crusade + [bag_minus_i])
+                        all_impedances.append(im)
+                        all_crusades.append(cr)
+
+                    argmin = np.argmin(all_impedances)
+
+                    lookup_table[t] = np.max([nx.cut_size(G, bag), all_impedances[argmin]]), \
+                                      [bag] + all_crusades[argmin]
+
+                    return np.max([nx.cut_size(G, bag), all_impedances[argmin]]), [bag] + all_crusades[argmin]
+
+        return impedance(bag_A, [bag_A])
+
+
     '''
     Returns CURE  policy u at time t, adjusted to fit our model
     Implemented from https://arxiv.org/pdf/1407.2241.pdf 
     Instead of investing all resources in one node, we can only focus all 
     intensity on one node as this is the control signal
     '''
+    
 
-    def __getCUREPolicy(self, const, t):
+    def __getCUREPolicy(self, frontld_dict, const, t):
 
-        self.is_waiting = True
-        self.is_following_path = False
+        max_count = frontld_dict['N']
+        peak_opt = 100.0 # ave_u # frontld_dict['peak_OPT']
+
+        peak_opt = frontld_dict['peak_OPT']
+
+        def get_I_t(sps, t_):
+            return np.where(np.array([sps[i].value_at(t_) for i in range(self.N)]))[0].tolist()
 
 
-        exit(1)
+        I_t = get_I_t(self.X, t)
+        r = peak_opt
+
+        
+        if t <= 0:
+            self.bag_A = I_t
+            self.bag_B = None
+            self.bag_C = None
+            self.bag_D = None
+            self.target_path = None
+
+        # check invariants of impedance/optimal crusade
+        check_invariants_impedance = False
+        if check_invariants_impedance:
+            impedance, opt_crus = self.find_opt_crusade(self.G, I_t)
+
+            # delta(w_i+1) <= delta(w_) for i = 0, 1, . . . , k − 1.
+            for k in range(len(opt_crus) - 1):
+                w_k = self.find_opt_crusade(self.G, opt_crus[k])[0]
+                w_k_1 = self.find_opt_crusade(self.G, opt_crus[k + 1])[0]
+                print(k, w_k, w_k_1, w_k_1 <= w_k)
+            
+            # c(A) <= delta(A)
+            print(nx.cut_size(self.G, I_t.tolist()), impedance, 
+                  nx.cut_size(self.G, I_t.tolist()) <= impedance)
 
 
-        return np.ones(self.N)
+        if self.is_waiting:
+            
+            print('Waiting... Infected:', len(I_t))
+
+            '''Waiting period'''
+            cut = nx.cut_size(self.G, I_t)
+
+            if cut <= r / 8:
+                self.is_waiting = False
+                self.bag_B = I_t
+
+                print('Finding optimal crusade...')
+                impedance, opt_crus = self.find_opt_crusade(self.G, self.bag_B)
+                self.target_path = opt_crus
+
+                print(opt_crus)
+                exit(1)
+
+        else:
+
+            '''Segments'''
+            if self.is_path_following_phase:
+                
+                '''Path-following phase'''
+            
+            else:
+
+                '''Excursion'''
+
+
+
+
+        return np.zeros(self.N)
 
 
 
@@ -724,7 +832,12 @@ class SISDynamicalSystem:
     and as such we control the _intensity_ of intervening, not the intensity of the treatment itself
     '''
 
-    def __getMCMPolicy(self, resource_const, t):
+    def __getMCMPolicy(self, frontld_dict, resource_const, t):
+
+        max_count = frontld_dict['N']
+        peak_opt = frontld_dict['peak_OPT']
+
+
         '''Find priority order'''
         
         '''Define resource threshold r as r = c * N where N is the size of the network
@@ -733,5 +846,12 @@ class SISDynamicalSystem:
         # r = resource_const * self.N
         
         # TODO
+
+
+
         print("TODO")
+
+        exit(1)
+
+
         return np.ones(self.N)

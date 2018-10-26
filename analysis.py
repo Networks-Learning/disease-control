@@ -41,7 +41,7 @@ class Evaluation:
         s_Qlam = r'Q$_{\lambda}$: ' + \
             str(np.mean(dict['Qlam'])) + ', '
         s_Qx = 'Q$_{X}$: ' + str(np.mean(dict['Qx'])) 
-        s_sims = '# of simulations: ' + str(len(self.data[0]))
+        s_sims = 'no. of simulations: ' + str(len(self.data[0]))
 
         s = s_beta + s_gamma + s_delta + s_rho + s_eta + '\n' \
             + s_Qlam + s_Qx + '\n' \
@@ -72,7 +72,7 @@ class Evaluation:
 
     '''Computes integral from 0 to T of (Qx * X) dt for a given trial'''
 
-    def __computeIntX(self, trial, custom_eta=None, weight_by_Qx=True):
+    def computeIntX(self, trial, custom_eta=None, weight_by_Qx=True):
         hf = HelperFunc()
         if custom_eta is None:
             eta = trial['info']['eta']
@@ -138,7 +138,7 @@ class Evaluation:
         
         '''Compute integral for every heuristic '''
         print("Computing present discounted loss integral for every heuristic...")
-        pdvs_by_heuristic = [[self.__computeIntX(trial) + self.__computeIntLambda(trial) 
+        pdvs_by_heuristic = [[self.computeIntX(trial) + self.__computeIntLambda(trial) 
                              for trial in tqdm(heuristic)] for heuristic in self.data]
         means, stddevs = [np.mean(pdvs) for pdvs in pdvs_by_heuristic], [np.std(pdvs) for pdvs in pdvs_by_heuristic]
         print("...done.")
@@ -190,7 +190,7 @@ class Evaluation:
 
         '''Compute statistics for every heuristic'''
         hf = HelperFunc()
-        intX_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
+        intX_by_heuristic = [[self.computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
                               for trial in heuristic] for heuristic in tqdm(self.data)]
 
         intX_m = np.array([np.mean(h) for h in intX_by_heuristic])
@@ -301,7 +301,7 @@ class Evaluation:
     def infection_cost_AND_intervention_effort(self, plot=False, save=False):
         '''Compute total infection cost and total time under treatment for every heuristic'''
         print("Computing total infection cost and total time under treatment for every heuristic...")
-        infection_cost_by_heuristic = [[self.__computeIntX(trial, custom_eta=0.0)  for trial in heuristic] for heuristic in self.data]
+        infection_cost_by_heuristic = [[self.computeIntX(trial, custom_eta=0.0)  for trial in heuristic] for heuristic in self.data]
         treatment_time_by_heuristic = [[self.__computeIntLambda(trial, custom_eta=0.0)  for trial in heuristic] for heuristic in self.data]
         print("...done.")
 
@@ -356,53 +356,57 @@ class Evaluation:
         treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True)
                                     for trial in heuristic] for heuristic in self.data]
 
-        raw_intensities = [[[hf.sps_values(trial['u'], t, summed=True) for t in hf.all_arrivals(trial['u'])]
-                             for trial in heuristic] for heuristic in self.data]
+        # raw_intensities = [[[hf.sps_values(trial['u'], t, summed=True) for t in hf.all_arrivals(trial['u'])]
+        #                      for trial in heuristic] for heuristic in self.data]
 
-        treatm_ave_intensity_by_heuristic = [[np.mean(data_row) for data_row in heuristic] 
-                                              for heuristic in raw_intensities]
+        # treatm_ave_intensity_by_heuristic = [[np.mean(data_row) for data_row in heuristic] 
+        #                                       for heuristic in raw_intensities]
 
-        treatm_max_intensity_by_heuristic = [[np.max(data_row) for data_row in heuristic] 
-                                              for heuristic in raw_intensities]
+        # treatm_max_intensity_by_heuristic = [[np.max(data_row) for data_row in heuristic] 
+        #                                       for heuristic in raw_intensities]
         
 
         means_treatment, stddevs_treatment = \
             [np.mean(treatments) for treatments in treatments_by_heuristic], \
             [np.std(treatments) for treatments in treatments_by_heuristic]
         
-        means_ave_intensity, stddevs_ave_intensity = \
-            [np.mean(treatments) for treatments in treatm_ave_intensity_by_heuristic], \
-            [np.std(treatments) for treatments in treatm_ave_intensity_by_heuristic]
+        # means_ave_intensity, stddevs_ave_intensity = \
+        #     [np.mean(treatments) for treatments in treatm_ave_intensity_by_heuristic], \
+        #     [np.std(treatments) for treatments in treatm_ave_intensity_by_heuristic]
 
-        means_max_intensity, stddevs_max_intensity = \
-            [np.mean(treatments) for treatments in treatm_max_intensity_by_heuristic], \
-            [np.std(treatments) for treatments in treatm_max_intensity_by_heuristic]
+        # means_max_intensity, stddevs_max_intensity = \
+        #     [np.mean(treatments) for treatments in treatm_max_intensity_by_heuristic], \
+        #     [np.std(treatments) for treatments in treatm_max_intensity_by_heuristic]
 
         print("\n Total treatments")
         for j in range(len(self.data)):
             print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_treatment[j], 4), round(stddevs_treatment[j], 4)))
 
-        print("\n Average treatment intensities")
-        for j in range(len(self.data)):
-            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_ave_intensity[j], 4), round(stddevs_ave_intensity[j], 4)))
+        # print("\n Average treatment intensities")
+        # for j in range(len(self.data)):
+        #     print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_ave_intensity[j], 4), round(stddevs_ave_intensity[j], 4)))
 
-        print("\n Peak treatment intensities")
-        for j in range(len(self.data)):
-            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_max_intensity[j], 4), round(stddevs_max_intensity[j], 4)))
+        # print("\n Peak treatment intensities")
+        # for j in range(len(self.data)):
+        #     print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_max_intensity[j], 4), round(stddevs_max_intensity[j], 4)))
 
-        return ((means_treatment, stddevs_treatment), 
-                (means_ave_intensity, stddevs_ave_intensity), 
-                (means_max_intensity, stddevs_max_intensity))
+        # return ((means_treatment, stddevs_treatment), 
+        #         (means_ave_intensity, stddevs_ave_intensity), 
+        #         (means_max_intensity, stddevs_max_intensity))
+
+        return 0 # TODO Change back and delete this
 
 
     '''Simulation summary'''
 
-    def simulation_infection_plot(self, granularity=0.001, save=False):
+    def simulation_infection_plot(self, size_tup=(4,3), granularity=0.001, save=False):
 
         print("Creating simulation infection plot...")
         
         '''Plotting functionality'''
         # Set up figure.
+        plt.rc('text', usetex=True)
+
         fig = plt.figure(figsize=(12, 8), facecolor='white')
         ax = fig.add_subplot(111, frameon=False)
 
@@ -411,6 +415,8 @@ class Evaluation:
         hf = HelperFunc()
 
         colors = 'rgbkymcgbkymc'
+        colors = 'rggbbyyk'
+        linestyles = ['-', '-', ':', '-', ':', '-', ':', '-']
         for ind, heuristic in enumerate(self.data):
 
             tspace = np.arange(0.0, heuristic[0]['info']['ttotal'], granularity)
@@ -419,18 +425,18 @@ class Evaluation:
             mean_X_t = np.mean(values_in_tspace, axis=0)
             stddev_X_t = np.std(values_in_tspace, axis=0)
             
-            ax.plot(tspace, mean_X_t, color=colors[ind])
+            ax.plot(tspace, mean_X_t, color=colors[ind], linestyle=linestyles[ind])
             ax.fill_between(tspace, mean_X_t - stddev_X_t, mean_X_t + stddev_X_t,
                             alpha=0.3, edgecolor=colors[ind], facecolor=colors[ind],
                 linewidth=0)
 
         ax.set_xlim([0, heuristic[0]['info']['ttotal']])
-        ax.set_xlabel('Time')
+        ax.set_xlabel(r'$t$')
         ax.set_ylim([0, heuristic[0]['info']['N']])
-        ax.set_ylabel('Number of nodes')
+        ax.set_ylabel(r'Infected nodes $\mathbf{1}^\top \mathbf{X}(t)$')
 
         # text box
-        box = True
+        box = False
         if box:
             s = self.__getTextBoxString()
             _, upper = ax.get_ylim()
@@ -440,15 +446,18 @@ class Evaluation:
 
         legend = []
         for str in self.descr:
-            legend += ['Total infected |X|: ' + str] #,
-            #           str +  'Total under treatment |H|']
+            legend += [str]
         ax.legend(legend)
         plt.draw()
         
         if save:
+            dpi = 300
+            # plt.tight_layout()
+            fig = plt.gcf()  # get current figure
+            fig.set_size_inches(size_tup)  # width, height
             plt.savefig(
-                'plots/' + self.filename[:-4] + 
-                '/simulation_infection_summary.png', format='png', frameon=False)
+                'plots/' + self.filename[:-4] +
+                '/simulation_infection_summary_withleg_2.png', format='png', frameon=False, dpi=dpi)
         else:
             plt.show()
         return 0
@@ -519,7 +528,7 @@ class Evaluation:
         print('Debugging..')
 
         hf = HelperFunc()
-        # infections_by_heuristic1 = [[self.__computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
+        # infections_by_heuristic1 = [[self.computeIntX(trial, custom_eta=0.0, weight_by_Qx=False) 
         #                             for trial in heuristic] for heuristic in self.data]
         # infections_by_heuristic2 = [[hf.sps_values(trial['Y'], trial['info']['ttotal'], summed=True)
         #                              for trial in heuristic] for heuristic in self.data]
@@ -576,17 +585,16 @@ class MultipleEvaluations:
         
         
         d = self.multi_summary.get('infections_and_interventions', None)
-        eval_objs = self.multi_summary.get('eval_obj', None)
+        Qs = self.multi_summary.get('Qs', None)
 
-        if d is not None and eval_objs is not None:
+        if d is not None and Qs is not None:
             
             keys = [self.saved[selected][0] for selected in self.all_selected]
             descriptions = [self.saved[selected][1] for selected in self.all_selected]
 
             
             # assumes data had same methods tested
-            Qx_axis = [np.mean(eval_objs[key].data[0][0]['info']['Qx'])
-                       for key in keys]
+            Qx_axis = [np.mean(Qs[key]) for key in keys]
             infections_axis = {name : [] for name in descriptions[0]} 
             infections_axis_std = {name : [] for name in descriptions[0]} 
 
@@ -609,7 +617,7 @@ class MultipleEvaluations:
             '''Plotting functionality'''
 
             plt.rc('text', usetex=True)
-            plt.rc('font', family='serif')
+            # plt.rc('font', family='serif')
 
             # Set up figure.
             fig = plt.figure(figsize=(12, 8), facecolor='white')
@@ -622,14 +630,15 @@ class MultipleEvaluations:
 
             hf = HelperFunc()
 
-            colors = 'rgbkymcgbkymc'
+            colors = 'rggbbyyk'
+            linestyles = ['-', '-', ':', '-', ':', '-', ':', '-']
             legend = []
             max_infected = 0
             for ind, name in enumerate(descriptions[0]):
                 legend.append(name)
 
                 # linear axis
-                ax.plot(Qx_axis, infections_axis[name], color=colors[ind])
+                ax.plot(Qx_axis, infections_axis[name], color=colors[ind], linestyle=linestyles[ind])
                 ax.fill_between(Qx_axis, 
                                 np.array(infections_axis[name]) - np.array(interventions_axis_std[name]  / np.sqrt(n)), 
                                 np.array(infections_axis[name]) + np.array(interventions_axis_std[name]  / np.sqrt(n)),
@@ -651,7 +660,7 @@ class MultipleEvaluations:
 
 
             if save:
-                dpi = 400
+                dpi = 300
                 # plt.tight_layout()
                 fig = plt.gcf()  # get current figure
                 fig.set_size_inches(size_tup)  # width, height
