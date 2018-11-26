@@ -31,8 +31,11 @@ print('done.')
 
 
 
-times = np.arange(1.0, 8.0, 0.2).tolist()
-# times = [1.2]
+times = np.arange(1.0, 4.0, 0.1).tolist()
+times2 = np.arange(1.001, 4.001, 0.1).tolist()
+times = times + times + times2
+times.sort()
+
 trial_no = 1
 
 for t in times:
@@ -61,19 +64,33 @@ for t in times:
     X_to_edgecolors = ['red' if X[i] == 1.0 else 'black' for i in G.nodes()]
     X_to_linewidths = [2.0 if X[i] == 1.0 else 0.7 for i in G.nodes()]
 
-    infected_nodes = [u for u in G.nodes() if X[u] == 1.0]
-    infected_nodes_to_u = {i: u[i] for i in infected_nodes}
-    healthy_nodes = [u for u in G.nodes() if X[u] != 1.0]
+    healthy_nodes = [i for i in G.nodes() if X[i] != 1.0]
+    infected_nodes = [i for i in G.nodes() if X[i] == 1.0 and abs(u[i]) == 0.0]
+    infected_treated_nodes = [i for i in G.nodes() if X[i] == 1.0 and abs(u[i]) != 0.0]
+    # add one infected node with u = 0 to 'under treatment' for proper color mapping
+    if infected_nodes:
+        v = infected_nodes.pop()
+        infected_treated_nodes.append(v)
+    infected_treated_nodes_to_u = {i: u[i] for i in infected_treated_nodes}
+
 
     plt.figure(figsize=(6, 4))
     nx.draw_networkx_edges(G, pos, nodelist=list(nodes_to_u.keys()), alpha=0.4)
-    nx.draw_networkx_nodes(G, pos, nodelist=infected_nodes,
+    nx.draw_networkx_nodes(G, pos, nodelist=infected_treated_nodes,
                         node_size=100,
-                        node_color=list(infected_nodes_to_u.values()),
+                        node_color=list(infected_treated_nodes_to_u.values()),
                         cmap=plt.cm.Blues,
+                        # node_color='blue',
                         linewidths=2.5,
                         edgecolors='black',
-                        label='infected')
+                        label='infected and targeted for treatment')
+    nx.draw_networkx_nodes(G, pos, nodelist=infected_nodes,
+                           node_size=100,
+                           node_color='white',
+                           # cmap=plt.cm.Blues,
+                           linewidths=2.5,
+                           edgecolors='black',
+                           label='infected')
     nx.draw_networkx_nodes(G, pos, nodelist=healthy_nodes,
                         node_size=100,
                         node_color='white',
@@ -83,7 +100,7 @@ for t in times:
                         label='healthy')
     plt.axis('off')
     plt.legend(numpoints=1)
-    plt.savefig('graphs/network_visualization_{}.png'.format(int(t * 1000)), frameon=False, format='png', dpi=600)
+    plt.savefig('graphs/network_visualization_3_{}.png'.format(int(t * 1000)), frameon=False, format='png', dpi=600)
     # plt.show()
     plt.close('all')
 
