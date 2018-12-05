@@ -11,7 +11,8 @@ from functools import reduce
 import networkx as nx
 
 from stochastic_processes import StochasticProcess, CountingProcess
-from helpers import HelperFunc 
+from helpers import HelperFunc
+import maxcut
 
 
 '''
@@ -33,6 +34,9 @@ class SISDynamicalSystem:
 
         # LRSR
         self.spectral_ranking = None
+
+        # MCM
+        self.mcm_ranking = None
 
         # CURE
         self.is_waiting = True
@@ -159,8 +163,8 @@ class SISDynamicalSystem:
     and as such we control the _intensity_ of intervening, not the intensity of the treatment itself
     '''
 
-    def simulate_MCM(self, frontld_dict, resource_const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMCMPolicy(frontld_dict, resource_const, t), time, plot, plot_update)
+    def simulate_MCM(self, const, time, plot=False, plot_update=1.0):
+        return self.__simulate(lambda t: self.__getMCMPolicy(const, t), time, plot, plot_update)
     
 
     '''
@@ -823,35 +827,21 @@ class SISDynamicalSystem:
 
         return np.zeros(self.N)
 
-
-
-    '''
-    Returns cut heuristic policy u at time t
-    Implemented from http://kalogeratos.com/psite/files/MyPapers/MCM_NetworksWorkshos_NIPS2015.pdf
-    with adjustments to fit the realistic setup where treatment improvement rho is the same for everyone
-    and as such we control the _intensity_ of intervening, not the intensity of the treatment itself
-    '''
-
-    def __getMCMPolicy(self, frontld_dict, resource_const, t):
-
-        max_count = frontld_dict['N']
-        peak_opt = frontld_dict['peak_OPT']
-
-
-        '''Find priority order'''
-        
-        '''Define resource threshold r as r = c * N where N is the size of the network
-           In the experiements of the paper, c was 0.1 and 0.25,  or 1.00 and 2.00
-           In particular, they choose r = beta * maxcut'''  
-        # r = resource_const * self.N
-        
-        # TODO
-
-
-
-        print("TODO")
-
-        exit(1)
-
-
-        return np.ones(self.N)
+    def __getMCMPolicy(self, const, t):
+        """
+        Returns the adapted heuristic policy MaxCutMinimzation (MCM) `u` at
+        time `t`. The method is adapted to fit the setup where treatment
+        intensity `rho` is the equal for everyone, and the control is made on
+        the rate of intervention, not the intensity of the treatment itself.
+        """
+        if t <= 0:
+            # Find MCM priority order once and cache it
+            self.mcm_ranking = maxcut.mcm(self.A)
+        elif self.mcm_ranking is None:
+            # The priority order should be cached. Raise an exception.
+            raise Exception('MCM ranking not computed...'
+                            'Something went wrong.')
+        ramp = const / np.arange(self.N, 0, -1)
+        u = np.ones(self.N)
+        u[self.mcm_ranking] = ramp
+        return u
