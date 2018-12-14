@@ -34,7 +34,8 @@ class StochasticProcess:
         try:
             assert(t > self.last_arrival)
         except AssertionError:
-            print("AssertionError: arrival time is before a previous arrival")
+            print("AssertionError: arrival time is before a previous arrival.\nt = {}, t (last arrival) = {}".format(
+                t, self.last_arrival))
             exit(1)
 
         self.last_arrival = t

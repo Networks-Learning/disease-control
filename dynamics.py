@@ -23,9 +23,9 @@ Class that implements the simulation of the disease control dynamical system
 
 class SISDynamicalSystem:
 
-    def __init__(self, N, X_init, A, param, cost):
+    def __init__(self, X_init, A, param, cost):
 
-        self.N = N
+        self.N = A.shape[0]
         self.beta = param['beta']
         self.gamma = param['gamma']
         self.delta = param['delta']
@@ -43,129 +43,19 @@ class SISDynamicalSystem:
         self.is_path_following_phase = False
         self.G = nx.from_numpy_matrix(A, parallel_edges=False, create_using=None)
 
-        if len(X_init) == N and \
-                A.shape[0] == N and \
-                A.shape[1] == N and \
-                len(cost['Qlam']) == N and \
-                len(cost['Qx']) == N:
+        if len(X_init) == self.N and \
+                A.shape[0] == A.shape[1]:
 
             self.A = A
             self.X_init = X_init
             self.Z_init = np.dot(A.T, X_init)
-            self.Qlam = cost['Qlam']
-            self.Qx = cost['Qx']
+            self.Qlam = cost['Qlam'] * np.ones(self.N)
+            self.Qx = cost['Qx'] * np.ones(self.N)
 
         else:
             print("\n--Dimensions don't match.--\n")
             exit(1)
 
-    
-    '''
-    Simulates the dynamical system using the stochastic optimal control policy
-    '''
-
-    def simulate_opt(self, time, plot=False, plot_update=1.0):
-        return self.__simulate(self.__getOptPolicy, time, plot, plot_update)
-
-    '''
-    Simulates the dynamical system using a trivial control intensity
-    '''
-
-    def simulate_trivial(self, intensity_const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getTrivialPolicy(intensity_const, t), time, plot, plot_update)
-
-    '''
-    Simulates the dynamical system using a trivial control intensity, 
-    but front-loaded with a max on number of interventions, then zero after the max is reached
-    '''
-
-    def simulate_trivial_frontloaded(self, level, frontld_dict, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getTrivialPolicyFrontLoaded(level, frontld_dict, const, t), time, plot, plot_update)
-
-    '''
-    Simulates the dynamical system using a trivial control intensity, 
-    using the same total intensity as OPT but redistributed over nodes
-    '''
-
-    def simulate_trivial_online_comparison(self, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getTrivialPolicyOnlineComparison(t), time, plot, plot_update)
-
-
-
-    '''
-    Simulates the dynamical system using the MN (most neighbors) degree heuristic
-    '''
-
-    def simulate_MN_degree_heuristic(self, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMNDegreeHeuristicPolicy(const, t), time, plot, plot_update)
-
-
-    '''
-    Simulates the dynamical system using the MN (most neighbors) degree heuristic
-    but front-loaded with a max on number of interventions, then zero after the max is reached
-    '''
-
-    def simulate_MN_frontloaded(self, level, frontld_dict, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMNDegreeHeuristicFrontLoaded(level, frontld_dict, const, t), time, plot, plot_update)
-
-
-    '''
-    Simulates the dynamical system using the MN (most neighbors) degree heuristic
-    using the same total intensity as OPT but redistributed over nodes
-    '''
-
-    def simulate_MN_degree_online_comparison(self, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMNDegreeHeuristicPolicyOnlineComparison(t), time, plot, plot_update)
-
-
-
-    '''
-    Simulates the dynamical system using the LN (least neighbors) degree heuristic
-    '''
-
-    def simulate_LN_degree_heuristic(self, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getLNDegreeHeuristicPolicy(const, t), time, plot, plot_update)
-
-    '''
-    Simulates the dynamical system using the LN (least neighbors) degree heuristic
-    but front-loaded with a max on number of interventions, then zero after the max is reached
-    '''
-
-    def simulate_LN_frontloaded(self, level, frontld_dict, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getLNDegreeHeuristicFrontLoaded(level, frontld_dict, const, t), time, plot, plot_update)
-
-
-
-
-    '''
-    Simulates the dynamical system using the Largest reduction in spectral radius(LRSR) heuristic 
-    '''
-
-    def simulate_LRSR_heuristic(self, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getLRSRHeuristicPolicy(const, t), time, plot, plot_update)
-
-    '''
-    Returns CURE  policy u at time t, adjusted to fit our model
-    Implemented from https://arxiv.org/pdf/1407.2241.pdf 
-    Instead of investing all resources in one node, we can only focus all 
-    intensity on one node as this is the control signal
-    '''
-
-    def simulate_CURE_policy(self, frontld_dict, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getCUREPolicy(frontld_dict, const, t), time, plot, plot_update)
-
-
-
-    '''
-    Simulates the dynamical system using the CUT/priority order heuristic 
-    from http://kalogeratos.com/psite/files/MyPapers/MCM_NetworksWorkshos_NIPS2015.pdf
-    with adjustments to fit the realistic setup where treatment improvement rho is the same for everyone
-    and as such we control the _intensity_ of intervening, not the intensity of the treatment itself
-    '''
-
-    def simulate_MCM(self, const, time, plot=False, plot_update=1.0):
-        return self.__simulate(lambda t: self.__getMCMPolicy(const, t), time, plot, plot_update)
-    
 
     '''
     Simulates the dynamical system over the time period
@@ -173,20 +63,25 @@ class SISDynamicalSystem:
                            where   t in [0, T]  ->  control vector for all N nodes 
     '''
 
-    def __simulate(self, policy_fun, time, plot, plot_update):
+    def __simulate(self, policy_fun, time, plot, plot_update=1.0):
 
         # time initialization
-        self.ttotal = time['total']
+        self.ttotal = time
 
         # state variable initialization
-        self.X = np.array([StochasticProcess(initial_condition=self.X_init[i]) for i in range(self.N)])
-        self.Z = np.array([StochasticProcess(initial_condition=self.Z_init[i]) for i in range(self.N)])
-        self.H = np.array([StochasticProcess(initial_condition=0.0) for _ in range(self.N)])
-        self.M = np.array([StochasticProcess(initial_condition=0.0) for _ in range(self.N)])
+        self.X = np.array(
+            [StochasticProcess(initial_condition=self.X_init[i]) for i in range(self.N)])
+        self.Z = np.array(
+            [StochasticProcess(initial_condition=self.Z_init[i]) for i in range(self.N)])
+        self.H = np.array([StochasticProcess(initial_condition=0.0)
+                           for _ in range(self.N)])
+        self.M = np.array([StochasticProcess(initial_condition=0.0)
+                           for _ in range(self.N)])
         self.Y = np.array([CountingProcess() for _ in range(self.N)])
         self.W = np.array([CountingProcess() for _ in range(self.N)])
         self.Nc = np.array([CountingProcess() for _ in range(self.N)])
-        self.u = np.array([StochasticProcess(initial_condition=0.0) for _ in range(self.N)])
+        self.u = np.array([StochasticProcess(initial_condition=0.0)
+                           for _ in range(self.N)])
 
         # create infection events for initial infections
         for i in range(len(self.X_init)):
@@ -199,7 +94,6 @@ class SISDynamicalSystem:
         self.last_arrival_type = None
         progress_bar = tqdm(total=self.ttotal, leave=False)
 
-        
         '''Plotting functionality'''
         if plot:
             # Set up figure.
@@ -209,7 +103,6 @@ class SISDynamicalSystem:
             # plt.show(block=False)
             self.already_plotted = set()
 
-            
             def callback(t, final=False):
                 new_plot = divmod(t, plot_update)[0]
                 if new_plot not in self.already_plotted or final:
@@ -250,26 +143,24 @@ class SISDynamicalSystem:
                     ax.set_xlabel('Time')
                     ax.set_ylim([0, self.N])
                     ax.set_ylabel('Number of nodes')
-
                     ax.legend(['Total infected |X|', 'Total under treatment |H|'])
                     plt.draw()
                     plt.pause(1e-10)
 
-
         while t < self.ttotal:
-            
-            
+
             '''Compute sum of intensities'''
             lambdaY, lambdaW, lambdaN = self.__getPoissonIntensities(t, policy_fun)
             lambda_all = np.sum(lambdaY) + np.sum(lambdaW) + np.sum(lambdaN)
             if lambda_all == 0:
                 # infection went extinct
                 # print("Infection went extinct at t = {}".format(round(t, 3)))
-                assert(not np.any([self.X[i].value_at(t) for i in range(self.N)]))
+                assert(not np.any([self.X[i].value_at(t)
+                                   for i in range(self.N)]))
                 progress_bar.update(self.ttotal - t)
                 t = self.ttotal
                 break
-            
+
             '''Generate next arrival of all processes Y[i], W[i], N[i]'''
             u = np.random.uniform(0.0, 1.0)
             w = - np.log(u) / lambda_all
@@ -277,19 +168,16 @@ class SISDynamicalSystem:
             self.all_processes.generate_arrival_at(t)
             progress_bar.update(w)
 
-            
-
             '''Sample what process the arrival came from'''
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
-            p[p == 0.] = 0. # sets -0.0 to 0.0
+            p[p == 0.] = 0.  # sets -0.0 to 0.0
             k = np.random.choice(3 * self.N, p=p)
-
 
             '''Adjust state variables accordingly'''
             # arrival Y
             if k < self.N:
                 self.last_arrival_type = 'Y'
-                i = k 
+                i = k
                 self.Y[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -316,7 +204,7 @@ class SISDynamicalSystem:
                 prev_H = self.H[i].value_at(t)
                 if prev_H == 1:
                     self.H[i].generate_arrival_at(t, -1.0)
-                
+
                 # dM = A(dN - H.dW)
                 if prev_H == 1:
                     for j in np.where(self.A[i])[0]:
@@ -338,7 +226,6 @@ class SISDynamicalSystem:
             if plot:
                 callback(t)
                 #pass
-            
 
         if plot:
             callback(t, final=True)
@@ -346,9 +233,81 @@ class SISDynamicalSystem:
             plt.show()
 
         progress_bar.close()
-        
+
         # return collected data for analysis
         return self.__getCollectedData()
+
+
+    '''
+    Returns intensities of counting processes Y, W, N as defined by model
+    '''
+
+    def __getPoissonIntensities(self, t, policy_fun):
+        '''Update control policy for every node'''
+        for i, control in enumerate(policy_fun(t)):
+            self.u[i].generate_arrival_at(t, None, N=control)
+
+        '''Compute intensities according to model'''
+        lambdaY = np.array([(1 - self.X[i].value_at(t)) * (self.beta * self.Z[i].value_at(
+            t) - self.gamma * self.M[i].value_at(t)) for i in range(self.N)])
+        lambdaW = np.array([self.X[i].value_at(
+            t) * (self.delta + self.rho * self.H[i].value_at(t)) for i in range(self.N)])
+        lambdaN = np.array([self.u[i].value_at(
+            t) * self.X[i].value_at(t) * (1 - self.H[i].value_at(t)) for i in range(self.N)])
+        return lambdaY, lambdaW, lambdaN
+
+
+    '''
+    Simulates any given policy
+    
+    SOC    - Stochastic optimal control
+    TR     - Trivial
+    TR-FL  - Trivial (front-loaded)
+    MN     - Most-neighbors
+    MN-FL  - Most-neighbors (front-loaded)
+    LN     - Least-neighbors 
+    LN-FL  - Least-neighbors (front-loaded)
+    LRSR   - Largest reduction in spectral radius policy
+    MCM    - MaxCut Minimization strategy, see
+             http://kalogeratos.com/psite/files/MyPapers/MCM_NetworksWorkshos_NIPS2015.pdf 
+    
+    '''
+
+    def simulate_policy(self, policy, baselines_dict, sim_dict, plot=False):
+
+        time = sim_dict['total_time']
+
+        if policy == 'SOC':
+            return self.__simulate(self.__getOptPolicy, time, plot)
+        
+        elif policy == 'TR':
+            return self.__simulate(lambda t: self.__getTrivialPolicy(baselines_dict['TR'], t), time, plot)
+        
+        elif policy == 'TR-FL':
+            return self.__simulate(lambda t: self.__getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), time, plot)
+        
+        elif policy == 'MN':
+            return self.__simulate(lambda t: self.__getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), time, plot)
+
+        elif policy == 'MN-FL':
+            return self.__simulate(lambda t: self.__getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), time, plot)
+
+        elif policy == 'LN':
+            return self.__simulate(lambda t: self.__getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), time, plot)
+
+        elif policy == 'LN-FL':
+            return self.__simulate(lambda t: self.__getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), time, plot)
+        
+        elif policy == 'LRSR':
+            return self.__simulate(lambda t: self.__getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), time, plot)
+
+        elif policy == 'MCM':
+            return self.__simulate(lambda t: self.__getMCMPolicy(baselines_dict['MCM'], t), time, plot)
+
+        else:
+            print('Invalid policy code.')
+            exit(1)
+        
     
     '''
     Creates file containing all information of the past simulation for analysis 
@@ -373,21 +332,7 @@ class SISDynamicalSystem:
                 'u': self.u}
 
 
-
-    '''
-    Returns intensities of counting processes Y, W, N as defined by model
-    '''
-
-    def __getPoissonIntensities(self, t, policy_fun):
-        '''Update control policy for every node'''
-        for i, control in enumerate(policy_fun(t)):
-            self.u[i].generate_arrival_at(t, None, N=control)
-        
-        '''Compute intensities according to model'''
-        lambdaY = np.array([(1 - self.X[i].value_at(t)) * (self.beta * self.Z[i].value_at(t) - self.gamma * self.M[i].value_at(t)) for i in range(self.N)])
-        lambdaW = np.array([self.X[i].value_at(t) * (self.delta + self.rho * self.H[i].value_at(t)) for i in range(self.N)])
-        lambdaN = np.array([self.u[i].value_at(t) * self.X[i].value_at(t) * (1 - self.H[i].value_at(t)) for i in range(self.N)])
-        return lambdaY, lambdaW, lambdaN
+    ''' *** Policies ***'''
 
     '''
     Returns stochastic optimal control policy u at time t
@@ -465,71 +410,13 @@ class SISDynamicalSystem:
     intensity(v) ~ Qx * Qlam^-1 * X * (1 - H)
     '''
 
-    def __getTrivialPolicy(self, intensity_const, t):
+    def __getTrivialPolicy(self, const, t):
         '''Array of X[i]'s and H[i]'s at time t'''
         X = np.array([self.X[i].value_at(t) for i in range(self.N)])
         H = np.array([self.H[i].value_at(t) for i in range(self.N)])
 
-        
         state = np.multiply(X, np.ones(self.N) - H)
-        return np.multiply(intensity_const * np.ones(self.N), np.multiply(state, self.Qx / self.Qlam))
-
-    '''
-    Returns trivial policy u at time t, front-loaded to spent interventions earlier
-    intensity(v) ~ Qx * Qlam^-1 * X * (1 - H)
-
-    - interpolates intensity between trivial_const and OPT_peak
-    - level x in [1, 2, 3] treates 1/4, 1/2, 1 intensity of OPT_peak + trivial_const
-      level 0 would correspond to constant trivial policy
-    '''
-
-    def __getTrivialPolicyFrontLoaded(self, level, frontld_dict, trivial_const, t):
-
-        max_count = frontld_dict['N']
-        peak_opt = frontld_dict['peak_OPT']
-
-        '''Array of X[i]'s and H[i]'s at time t'''
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
-
-        # make sure limit of interventions is not reached yet
-        interv_ct = np.sum([self.Nc[i].value_at(t) for i in range(self.N)])
-        if interv_ct > max_count:
-            conditional_ones = np.zeros(self.N)
-        else:
-            conditional_ones = np.ones(self.N)
-
-        # compute interpolated intensity for front-loading
-        trivial_intensity = trivial_const * np.mean(self.Qx) / np.mean(self.Qlam)
-        diff = peak_opt / self.N - trivial_intensity
-        control = trivial_intensity + 1.0 / (2.0 ** (3 - level)) * diff
-
-        return np.multiply(control * conditional_ones, state)
-
-
-
-    '''
-    Returns trivial policy u at time t, using the same total treatment intensity as OPT 
-    at a given state.
-    This is equivalent to redistributing the mass of intensities to a different pattern.
-
-    '''
-
-    def __getTrivialPolicyOnlineComparison(self, t):
-        '''Array of X[i]'s and H[i]'s at time t'''
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
-
-        opt_u = self.__getOptPolicy(t)
-        opt_u_effective = np.multiply(opt_u, state)
-        total = np.sum(opt_u_effective)
-        m = np.sum(state)
-        control = total / m if m > 0 else 0
-
-        return np.multiply(np.multiply(control, np.ones(self.N)), state)
-
+        return np.multiply(const * np.ones(self.N), np.multiply(state, self.Qx / self.Qlam))
 
 
     '''
@@ -547,70 +434,7 @@ class SISDynamicalSystem:
         state = np.multiply(X, np.ones(self.N) - H)
         return np.multiply(const * deg, np.multiply(state, self.Qx / self.Qlam))
 
-
-    '''
-    Returns MN (most neighbors) degree heuristic policy u at time t
-    intensity(v) ~ deg(v) * Qx * Qlam^-1 * X * (1 - H)
-
-    - interpolates intensity between trivial_const and OPT_peak
-    - level x in [1, 2, 3] treates 1/4, 1/2, 1 intensity of OPT_peak + trivial_const
-    - level 0 would correspond to constant trivial policy
-    '''
-
-    def __getMNDegreeHeuristicFrontLoaded(self, level, frontld_dict, const, t):
-
-        max_count = frontld_dict['N']
-        peak_opt = frontld_dict['peak_OPT']
-
-        '''Array of X[i]'s and H[i]'s at time t'''
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
-
-        # make sure limit of interventions is not reached yet
-        interv_ct = np.sum([self.Nc[i].value_at(t) for i in range(self.N)])
-        if interv_ct > max_count:
-            conditional_ones = np.zeros(self.N)
-        else:
-            conditional_ones = np.ones(self.N)
-
-        # compute interpolated intensity for front-loading
-        deg = np.dot(self.A.T, np.ones(self.N))
-        deg_intensity = const * deg * np.mean(self.Qx) / np.mean(self.Qlam)
-        diff = (peak_opt / self.N) * np.ones(self.N) - deg_intensity
-        control = deg_intensity + 1.0 / (2.0 ** (3 - level)) * diff
-
-        return np.multiply(np.multiply(control, conditional_ones), state)
-
-
-
-
-
-    '''
-    Returns MN policy u at time t, using the same total treatment intensity as OPT 
-    at a given state.
-    This is equivalent to redistributing the mass of intensities to a different pattern.
-
-    '''
-
-    def __getMNDegreeHeuristicPolicyOnlineComparison(self, t):
-
-        '''Array of X[i]'s and H[i]'s at time t'''
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
-
-        deg = np.dot(self.A.T, np.ones(self.N))
-        total_degs_effective = np.sum(np.multiply(deg, state))
-
-        opt_u = self.__getOptPolicy(t)
-        opt_u_effective = np.multiply(opt_u, state)
-        total = np.sum(opt_u_effective)
-
-        control = total / total_degs_effective if total_degs_effective > 0 else 0
-
-        return np.multiply(control * deg, state)
-
+    
     '''
     Returns LN (least neighbors) degree heuristic policy u at time t
     intensity(v) ~ (maxdeg - deg(v) + 1) * Qx * Qlam^-1 * X * (1 - H)
@@ -621,57 +445,21 @@ class SISDynamicalSystem:
         X = np.array([self.X[i].value_at(t) for i in range(self.N)])
         H = np.array([self.H[i].value_at(t) for i in range(self.N)])
 
-
         deg = np.dot(self.A.T, np.ones(self.N))
         state = np.multiply(X, np.ones(self.N) - H)
         return np.multiply(const * ((np.max(deg) + 1) * np.ones(self.N) - deg), np.multiply(state, self.Qx / self.Qlam))
-
-    '''
-    Returns LN (least neighbors) degree heuristic policy u at time t
-    intensity(v) ~ (maxdeg - deg(v) + 1) * Qx * Qlam^-1 * X * (1 - H)
-    but front-loaded
-    '''
-
-    def __getLNDegreeHeuristicFrontLoaded(self, level, frontld_dict, const, t):
-
-        max_count = frontld_dict['N']
-        peak_opt = frontld_dict['peak_OPT']
-
-        '''Array of X[i]'s and H[i]'s at time t'''
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
-
-        # make sure limit of interventions is not reached yet
-        interv_ct = np.sum([self.Nc[i].value_at(t) for i in range(self.N)])
-        if interv_ct > max_count:
-            conditional_ones = np.zeros(self.N)
-        else:
-            conditional_ones = np.ones(self.N)
-
-        # compute interpolated intensity for front-loading
-        deg = np.dot(self.A.T, np.ones(self.N))
-        deg_intensity = const * \
-            ((np.max(deg) + 1) * np.ones(self.N) - deg) * \
-            np.mean(self.Qx) / np.mean(self.Qlam)
-        diff = (peak_opt / self.N) * np.ones(self.N) - deg_intensity
-        control = deg_intensity + 1.0 / (2.0 ** (3 - level)) * diff
-
-        return np.multiply(np.multiply(control, conditional_ones), state)
-
-
 
 
     '''
     Returns Largest reduction in spectral radius (LRSR) heuristic policy u at time t
     u = 1/rank where rank is priority order of LRSR (independent of X(t) for consistency)
-    const adjusts total intensity to match interventions with OPT
+    const adjusts total intensity to match interventions with SOC
     '''
     
     def __getLRSRHeuristicPolicy(self, const, t):
 
         def spectral_radius(A):
-                return np.max(np.abs(np.linalg.eigvals(A)))
+            return np.max(np.abs(np.linalg.eigvals(A)))
 
         if t <= 0:
             
@@ -685,7 +473,10 @@ class SISDynamicalSystem:
                 A_[:, n] = np.zeros(self.N)
                 l[n] = tau - spectral_radius(A_)
 
+            # compute ranking
             self.spectral_ranking = np.argsort(l)
+
+            # assign intensities according to order
             ramp = const * np.flip(np.fromfunction(
                 lambda i: 1 / (i + 1), (self.N, ), dtype=float))
             u = np.ones(self.N)
@@ -703,130 +494,7 @@ class SISDynamicalSystem:
 
         return u
 
-
-    '''Takes G, bag A, bag B, with A subseteq B
-       returns crusade (w_0, w_1, ..., w_k) (sequence of bags)
-          w_0 = A
-          w_k = 0
-          one node removed every step
-       optimal means width of crusade is minimized
-    '''
-
-    def find_opt_crusade(self, G, bag_A):
-
-        lookup_table = dict()
-
-        def impedance(bag, crusade):
-                        
-            if len(bag) == 1:
-                # recursion bottoms out
-                return nx.cut_size(G, bag), [bag]
-            else:
-                # memoization: check if bag was already seen
-                t = tuple(bag)
-                if t in lookup_table:
-                    return lookup_table[t][0], lookup_table[t][1]
-
-                else:
-                    all_impedances = []
-                    all_crusades = []
-                    
-                    for i in range(len(bag)):
-                        bag_minus_i = np.delete(bag, i).tolist()
-                        im, cr = impedance(bag_minus_i, crusade + [bag_minus_i])
-                        all_impedances.append(im)
-                        all_crusades.append(cr)
-
-                    argmin = np.argmin(all_impedances)
-
-                    lookup_table[t] = np.max([nx.cut_size(G, bag), all_impedances[argmin]]), \
-                                      [bag] + all_crusades[argmin]
-
-                    return np.max([nx.cut_size(G, bag), all_impedances[argmin]]), [bag] + all_crusades[argmin]
-
-        return impedance(bag_A, [bag_A])
-
-
-    '''
-    Returns CURE  policy u at time t, adjusted to fit our model
-    Implemented from https://arxiv.org/pdf/1407.2241.pdf 
-    Instead of investing all resources in one node, we can only focus all 
-    intensity on one node as this is the control signal
-    '''
     
-
-    def __getCUREPolicy(self, frontld_dict, const, t):
-
-        max_count = frontld_dict['N']
-        peak_opt = 100.0 # ave_u # frontld_dict['peak_OPT']
-
-        peak_opt = frontld_dict['peak_OPT']
-
-        def get_I_t(sps, t_):
-            return np.where(np.array([sps[i].value_at(t_) for i in range(self.N)]))[0].tolist()
-
-
-        I_t = get_I_t(self.X, t)
-        r = peak_opt
-
-        
-        if t <= 0:
-            self.bag_A = I_t
-            self.bag_B = None
-            self.bag_C = None
-            self.bag_D = None
-            self.target_path = None
-
-        # check invariants of impedance/optimal crusade
-        check_invariants_impedance = False
-        if check_invariants_impedance:
-            impedance, opt_crus = self.find_opt_crusade(self.G, I_t)
-
-            # delta(w_i+1) <= delta(w_) for i = 0, 1, . . . , k − 1.
-            for k in range(len(opt_crus) - 1):
-                w_k = self.find_opt_crusade(self.G, opt_crus[k])[0]
-                w_k_1 = self.find_opt_crusade(self.G, opt_crus[k + 1])[0]
-                print(k, w_k, w_k_1, w_k_1 <= w_k)
-            
-            # c(A) <= delta(A)
-            print(nx.cut_size(self.G, I_t.tolist()), impedance, 
-                  nx.cut_size(self.G, I_t.tolist()) <= impedance)
-
-
-        if self.is_waiting:
-            
-            print('Waiting... Infected:', len(I_t))
-
-            '''Waiting period'''
-            cut = nx.cut_size(self.G, I_t)
-
-            if cut <= r / 8:
-                self.is_waiting = False
-                self.bag_B = I_t
-
-                print('Finding optimal crusade...')
-                impedance, opt_crus = self.find_opt_crusade(self.G, self.bag_B)
-                self.target_path = opt_crus
-
-                print(opt_crus)
-                exit(1)
-
-        else:
-
-            '''Segments'''
-            if self.is_path_following_phase:
-                
-                '''Path-following phase'''
-            
-            else:
-
-                '''Excursion'''
-
-
-
-
-        return np.zeros(self.N)
-
     def __getMCMPolicy(self, const, t):
         """
         Returns the adapted heuristic policy MaxCutMinimzation (MCM) `u` at
@@ -845,3 +513,69 @@ class SISDynamicalSystem:
         u = np.ones(self.N)
         u[self.mcm_ranking] = ramp
         return u
+
+
+
+    '''
+    Returns front-loaded variation of policy u at time t
+    Front-loading means: 
+    '''
+
+    def __frontloadPolicy(self, u, frontload_info, t):
+
+        # make sure limit of interventions is not reached yet
+        max_count = frontload_info['N']
+        interv_ct = np.sum([self.Nc[i].value_at(t) for i in range(self.N)])
+        if interv_ct > max_count:
+            u = np.zeros(self.N)
+
+        # scale proportionally s.t. max(u) = max(u_SOC)
+        if np.sum(u) > 0:
+
+            # maximum treatment intensity of SOC over all trials
+            max_SOC = frontload_info['max_u']
+
+            # maximum treatment intensity of u over all trials
+            max_u = np.max(u)
+
+            return max_SOC * u / max_u
+        else:
+            return u
+
+
+    '''
+    Returns trivial policy u at time t, front-loaded to spent interventions earlier
+    intensity(v) ~ Qx * Qlam^-1 * X * (1 - H), at maximum intensity of SOC
+    '''
+
+    def __getTrivialPolicyFrontLoaded(self, const, frontload_info, t):
+
+        # compute front-loaded variant
+        u = self.__getTrivialPolicy(const, t)
+        return self.__frontloadPolicy(u, frontload_info, t)
+
+
+    '''
+    Returns MN (most neighbors) degree heuristic policy u at time t
+
+    Front-loaded: maximum total intensity of SOC over time 
+    is used distributed across all nodes at all times t
+    '''
+
+    def __getMNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
+
+        # compute front-loaded variant
+        u = self.__getMNDegreeHeuristicPolicy(const, t)
+        return self.__frontloadPolicy(u, frontload_info, t)
+
+
+    '''
+    Returns LN (least neighbors) degree heuristic policy u at time t
+    Front-loaded
+    '''
+
+    def __getLNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
+
+         # compute front-loaded variant
+        u = self.__getLNDegreeHeuristicPolicy(const, t)
+        return self.__frontloadPolicy(u, frontload_info, t)

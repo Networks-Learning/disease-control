@@ -21,6 +21,9 @@ class Evaluation:
         self.filename = filename
         self.descr = description
 
+        self.colors = 'rggbbkkym'
+        self.linestyles = ['-', '-', ':', '-', ':', '-', ':', '-', '-']
+
         # create directory for plots
         directory = 'plots/' + self.filename[:-4]
         if not os.path.exists(directory):
@@ -353,46 +356,25 @@ class Evaluation:
     def summarize_interventions_and_intensities(self):
 
         hf = HelperFunc()
-        treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True)
-                                    for trial in heuristic] for heuristic in self.data]
-
-        # raw_intensities = [[[hf.sps_values(trial['u'], t, summed=True) for t in hf.all_arrivals(trial['u'])]
-        #                      for trial in heuristic] for heuristic in self.data]
-
-        # treatm_ave_intensity_by_heuristic = [[np.mean(data_row) for data_row in heuristic] 
-        #                                       for heuristic in raw_intensities]
-
-        # treatm_max_intensity_by_heuristic = [[np.max(data_row) for data_row in heuristic] 
-        #                                       for heuristic in raw_intensities]
         
+        '''Intensities'''
+        max_intensities = [[[np.max(hf.sps_values(trial['u'], t, summed=False)) for t in hf.all_arrivals(trial['u'])]
+                            for trial in heuristic] for heuristic in tqdm(self.data)]
+        max_per_trial = [[np.max(trial) for trial in heuristic]
+                         for heuristic in tqdm(max_intensities)]
+        max_per_heuristic = [np.max(heuristic) for heuristic in max_per_trial]
 
-        means_treatment, stddevs_treatment = \
-            [np.mean(treatments) for treatments in treatments_by_heuristic], \
-            [np.std(treatments) for treatments in treatments_by_heuristic]
-        
-        # means_ave_intensity, stddevs_ave_intensity = \
-        #     [np.mean(treatments) for treatments in treatm_ave_intensity_by_heuristic], \
-        #     [np.std(treatments) for treatments in treatm_ave_intensity_by_heuristic]
+        print(max_per_trial)
+        print(max_per_heuristic)
 
-        # means_max_intensity, stddevs_max_intensity = \
-        #     [np.mean(treatments) for treatments in treatm_max_intensity_by_heuristic], \
-        #     [np.std(treatments) for treatments in treatm_max_intensity_by_heuristic]
+        '''Treatments'''
 
-        print("\n Total treatments")
-        for j in range(len(self.data)):
-            print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_treatment[j], 4), round(stddevs_treatment[j], 4)))
+        # treatments_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True)
+        #                             for trial in heuristic] for heuristic in self.data]
 
-        # print("\n Average treatment intensities")
-        # for j in range(len(self.data)):
-        #     print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_ave_intensity[j], 4), round(stddevs_ave_intensity[j], 4)))
-
-        # print("\n Peak treatment intensities")
-        # for j in range(len(self.data)):
-        #     print('{:<20} \t {:<10} \t {:<10}'.format(self.descr[j], round(means_max_intensity[j], 4), round(stddevs_max_intensity[j], 4)))
-
-        # return ((means_treatment, stddevs_treatment), 
-        #         (means_ave_intensity, stddevs_ave_intensity), 
-        #         (means_max_intensity, stddevs_max_intensity))
+        # means_treatment, stddevs_treatment = \
+        #     [np.mean(treatments) for treatments in treatments_by_heuristic], \
+        #     [np.std(treatments) for treatments in treatments_by_heuristic]
 
         return 0 # TODO Change back and delete this
 
@@ -414,9 +396,6 @@ class Evaluation:
 
         hf = HelperFunc()
 
-        colors = 'rgbkymcgbkymc'
-        colors = 'rggbbyyk'
-        linestyles = ['-', '-', ':', '-', ':', '-', ':', '-']
         for ind, heuristic in enumerate(self.data):
 
             tspace = np.arange(0.0, heuristic[0]['info']['ttotal'], granularity)
@@ -425,9 +404,9 @@ class Evaluation:
             mean_X_t = np.mean(values_in_tspace, axis=0)
             stddev_X_t = np.std(values_in_tspace, axis=0)
             
-            ax.plot(tspace, mean_X_t, color=colors[ind], linestyle=linestyles[ind])
+            ax.plot(tspace, mean_X_t, color=self.colors[ind], linestyle=self.linestyles[ind])
             ax.fill_between(tspace, mean_X_t - stddev_X_t, mean_X_t + stddev_X_t,
-                            alpha=0.3, edgecolor=colors[ind], facecolor=colors[ind],
+                            alpha=0.3, edgecolor=self.colors[ind], facecolor=self.colors[ind],
                 linewidth=0)
 
         ax.set_xlim([0, heuristic[0]['info']['ttotal']])
@@ -476,7 +455,6 @@ class Evaluation:
 
         hf = HelperFunc()
 
-        colors = 'rgbkymcgbkymc'
         for ind, heuristic in enumerate(self.data):
 
             tspace = np.arange(0.0, heuristic[0]['info']['ttotal'], granularity)
@@ -485,9 +463,9 @@ class Evaluation:
             mean_H_t = np.mean(values_in_tspace, axis=0)
             stddev_H_t = np.std(values_in_tspace, axis=0)
 
-            ax.plot(tspace, mean_H_t, color=colors[ind])
+            ax.plot(tspace, mean_H_t, color=self.colors[ind])
             ax.fill_between(tspace, mean_H_t - stddev_H_t, mean_H_t + stddev_H_t,
-                            alpha=0.3, edgecolor=colors[ind], facecolor=colors[ind],
+                            alpha=0.3, edgecolor=self.colors[ind], facecolor=self.colors[ind],
                             linewidth=0)
 
         ax.set_xlim([0, heuristic[0]['info']['ttotal']])
@@ -573,6 +551,9 @@ class MultipleEvaluations:
         self.saved = saved 
         self.all_selected = all_selected 
         self.multi_summary = multi_summary
+        
+        self.colors = 'rggbbkkym'
+        self.linestyles = ['-', '-', ':', '-', ':', '-', ':', '-', '-']
 
         # create directory for plots
         directory = 'plots_multi/' + str(self.all_selected)
@@ -589,12 +570,11 @@ class MultipleEvaluations:
 
         if d is not None and Qs is not None:
             
-            keys = [self.saved[selected][0] for selected in self.all_selected]
+            keys = [self.saved[selected] for selected in self.all_selected]
             descriptions = [self.saved[selected][1] for selected in self.all_selected]
 
-            
             # assumes data had same methods tested
-            Qx_axis = [np.mean(Qs[key]) for key in keys]
+            Qx_axis = [Qs[key] for key in keys]
             infections_axis = {name : [] for name in descriptions[0]} 
             infections_axis_std = {name : [] for name in descriptions[0]} 
 
@@ -630,19 +610,17 @@ class MultipleEvaluations:
 
             hf = HelperFunc()
 
-            colors = 'rggbbyyk'
-            linestyles = ['-', '-', ':', '-', ':', '-', ':', '-']
             legend = []
             max_infected = 0
             for ind, name in enumerate(descriptions[0]):
                 legend.append(name)
 
                 # linear axis
-                ax.plot(Qx_axis, infections_axis[name], color=colors[ind], linestyle=linestyles[ind])
+                ax.plot(Qx_axis, infections_axis[name], color=self.colors[ind], linestyle=self.linestyles[ind])
                 ax.fill_between(Qx_axis, 
                                 np.array(infections_axis[name]) - np.array(interventions_axis_std[name]  / np.sqrt(n)), 
                                 np.array(infections_axis[name]) + np.array(interventions_axis_std[name]  / np.sqrt(n)),
-                                alpha=0.3, edgecolor=colors[ind], facecolor=colors[ind],
+                                alpha=0.3, edgecolor=self.colors[ind], facecolor=self.colors[ind],
                                 linewidth=0)
 
                 # ax.errorbar(Qx_axis, infections_axis[name], yerr=interventions_axis_std[name])
