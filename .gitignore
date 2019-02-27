@@ -1,3 +1,6 @@
+# Ignore data folder
+data/
+
 temp_pickles/
 plots/
 graphs/

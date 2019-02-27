@@ -1,5 +1,5 @@
 """
-Implements the MaxCutMinimization (MCM) strategy to suppress SIS epidemics, as
+Implement the MaxCutMinimization (MCM) strategy to suppress SIS epidemics, as
 defined in the following paper.
 
 K. Scaman, A. Kalogeratos and N. Vayatis, "Suppressing Epidemics in Networks

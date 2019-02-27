@@ -23,7 +23,7 @@ if __name__ == '__main__':
 
     saved = {
         0: 'test_all_but_MCM_Q_1_300_v0.pkl',
-    }         
+    }
 
 
     all_selected = [0]  # select pickle files to import
