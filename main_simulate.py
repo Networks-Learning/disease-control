@@ -25,19 +25,16 @@ if __name__ == '__main__':
 
     # Experiments
     experiments = [
-        Experiment('test_all_but_MCM',
-                   sim_dict={'total_time': 10.00, 'trials_per_setting': 30},
-                   policy_dict={
-                       'SOC': True,
-                       'TR': True,
-                       'TR-FL': True,
-                       'MN': True,
-                       'MN-FL': True,
-                       'LN': True,
-                       'LN-FL': True,
-                       'LRSR': True,
-                       'MCM': False,
-                   }),
+        Experiment('test_all',
+                   sim_dict={'total_time': 10.00, 'trials_per_setting': 2},
+                   policy_list=[
+                      'SOC',
+                      'TR', 'TR-FL',
+                      'MN', 'MN-FL',
+                      'LN', 'LN-FL',
+                      'LRSR',
+                      'MCM',
+                   ]),
     ]
 
     # Simulation (Nothing below should be changed)

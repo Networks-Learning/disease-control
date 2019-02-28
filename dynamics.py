@@ -1,13 +1,8 @@
 
-import pandas as pd
 import numpy as np
-from pprint import pprint
 import matplotlib.pyplot as plt
-import scipy.stats
 from tqdm import tqdm
 import scipy.optimize
-from time import sleep
-from functools import reduce
 import networkx as nx
 
 from stochastic_processes import StochasticProcess, CountingProcess
@@ -38,7 +33,8 @@ class SISDynamicalSystem:
         # CURE
         self.is_waiting = True
         self.is_path_following_phase = False
-        self.G = nx.from_numpy_matrix(A, parallel_edges=False, create_using=None)
+        self.G = nx.from_numpy_matrix(A, parallel_edges=False,
+                                      create_using=None)
 
         if (len(X_init) == self.N) and (A.shape[0] == A.shape[1]):
             self.A = A
@@ -51,32 +47,39 @@ class SISDynamicalSystem:
 
     def __simulate(self, policy_fun, time, plot, plot_update=1.0):
         """
-        Simulate the dynamical system over the time period policy_fun must be
-        of shape: (1,) -> (N,) where t in [0, T] -> control vector for all N
-        nodes.
+        Simulate the SIS dynamical system using Ogata's thinning algorithm over
+        the time period policy_fun must be of shape: (1,) -> (N,)
+        where t in [0, T] -> control vector for all N nodes.
         """
 
-        # time initialization
+        # Initialize the end time of the simulation
         self.ttotal = time
 
-        # state variable initialization
+        # Init the array of infection state processes
         self.X = np.array(
             [StochasticProcess(initial_condition=self.X_init[i])
              for i in range(self.N)])
+        # Init the array of neighbors infection state processes
         self.Z = np.array(
             [StochasticProcess(initial_condition=self.Z_init[i])
              for i in range(self.N)])
+        # Init the array of treatment state processes
         self.H = np.array([StochasticProcess(initial_condition=0.0)
                            for _ in range(self.N)])
+        # Init the array of neighbors treatment state processes
         self.M = np.array([StochasticProcess(initial_condition=0.0)
                            for _ in range(self.N)])
+        # Init the array of counting process of infections
         self.Y = np.array([CountingProcess() for _ in range(self.N)])
+        # Init the array of counting process of recoveries
         self.W = np.array([CountingProcess() for _ in range(self.N)])
+        # Init the array of counting process of treatments
         self.Nc = np.array([CountingProcess() for _ in range(self.N)])
+        # Init the array of process of treatment control rates
         self.u = np.array([StochasticProcess(initial_condition=0.0)
                            for _ in range(self.N)])
 
-        # create infection events for initial infections
+        # Create infection events for initial infections
         for i in range(len(self.X_init)):
             if self.X_init[i] == 1.0:
                 self.Y[i].generate_arrival_at(0.0)
@@ -264,6 +267,11 @@ class SISDynamicalSystem:
             FIXME: WHAT IS THIS ?????
         plot : bool, optional (default: False)
             Indicate whether or not to plot stuff
+
+        Returns
+        -------
+        data : dict
+            Collected data from the simulation
         """
 
         time = sim_dict['total_time']
@@ -480,8 +488,8 @@ class SISDynamicalSystem:
             self.mcm_ranking = maxcut.mcm(self.A)
         elif self.mcm_ranking is None:
             # The priority order should be cached. Raise an exception.
-            raise Exception('MCM ranking not computed...'
-                            'Something went wrong.')
+            raise Exception("MCM ranking not computed..."
+                            "Something went wrong.")
         ramp = const / np.arange(self.N, 0, -1)
         u = np.ones(self.N)
         u[self.mcm_ranking] = ramp

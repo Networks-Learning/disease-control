@@ -9,20 +9,20 @@ class Experiment:
     (Certain default values are set here to reduce clutter.)
     """
 
-    def __init__(self, name, policy_dict=None, sim_dict=None, param_dict=None,
+    def __init__(self, name, policy_list=None, sim_dict=None, param_dict=None,
                  cost_dict=None, baselines_dict=None):
         # Default policies to run
-        self.policy_dict = {
-            'SOC': True,
-            'TR': True,
-            'TR-FL': True,
-            'MN': True,
-            'MN-FL': True,
-            'LN': True,
-            'LN-FL': True,
-            'LRSR': True,
-            'MCM': True,
-        }
+        self.policy_list = [
+            'SOC',
+            'TR',
+            'TR-FL',
+            'MN',
+            'MN-FL',
+            'LN',
+            'LN-FL',
+            'LRSR',
+            'MCM',
+        ]
         # Default simulation settings
         self.sim_dict = {
             'total_time': 10.00,
@@ -53,19 +53,19 @@ class Experiment:
         # Experiment name
         self.name = name
         # Change defaults to given parameters
-        self.update(policy_dict=policy_dict,
+        self.update(policy_list=policy_list,
                     sim_dict=sim_dict,
                     param_dict=param_dict,
                     cost_dict=cost_dict,
                     baselines_dict=baselines_dict)
 
-    def update(self, policy_dict=None, sim_dict=None, param_dict=None,
+    def update(self, policy_list=None, sim_dict=None, param_dict=None,
                cost_dict=None, baselines_dict=None):
         """
         Update dictionaries.
         """
-        if policy_dict:
-            self.policy_dict = policy_dict
+        if policy_list:
+            self.policy_list = policy_list
         if sim_dict:
             self.sim_dict = sim_dict
         if param_dict:
@@ -79,19 +79,19 @@ class Experiment:
         """
         Run the experiment and return a summary as a list of dict.
         """
-        # Simulate trajectory of dynamical system under various heuristics
-        system = SISDynamicalSystem(X_init, A, self.param_dict, self.cost_dict)
-        # find all policies set to be simulated
-        available_policies = [k for k in self.policy_dict.keys()
-                              if self.policy_dict[k]]
-        data = [{"dat": [], "name": None}
-                for _ in range(len(available_policies))]
-        # simulate number of times
+        # Initialize the result object
+        result = [{"dat": [], "name": policy} for policy in self.policy_list]
+        # Simulate number of times
         for tr in range(self.sim_dict['trials_per_setting']):
-            print("Trial # " + str(tr))
             # ...for every requested policy
-            for j, policy in enumerate(available_policies):
-                data[j]['name'] = policy
-                data[j]['dat'].append(system.simulate_policy(
-                    policy, self.baselines_dict, self.sim_dict, plot=False))
-        return data
+            for j, policy in enumerate(self.policy_list):
+                print(f"Trial #{tr:d} - policy {policy:s}", end="\r")
+                # Simulate a trajectory of the SIS dynamical system under
+                # various control strategies
+                system = SISDynamicalSystem(
+                    X_init, A, self.param_dict, self.cost_dict)
+                data = system.simulate_policy(
+                    policy, self.baselines_dict, self.sim_dict, plot=False)
+                assert result[j]['name'] == policy
+                result[j]['dat'].append(data)
+        return result
