@@ -1,18 +1,9 @@
-import pandas as pd
-import numpy as np 
-from pprint import pprint
 import matplotlib.pyplot as plt
-import scipy.stats
-from tqdm import tqdm
-import scipy.optimize
-import joblib
-import networkx
-import os
 import collections
+import joblib
+import os
 
-from dynamics import SISDynamicalSystem
 from analysis import Evaluation, MultipleEvaluations
-from stochastic_processes import StochasticProcess, CountingProcess
 
 plt.switch_backend('agg')
 
@@ -22,7 +13,7 @@ if __name__ == '__main__':
     '''Evaluate results'''
 
     saved = {
-        0: 'test_all_but_MCM_Q_1_300_v0.pkl',
+        0: 'test_all_but_MCM_Q_1_400_v5.pkl',
     }
 
 
@@ -42,23 +33,28 @@ if __name__ == '__main__':
 
             print('Analyzing:  {}'.format(saved[selected]))
 
-            data = joblib.load('temp_pickles/' + saved[selected])
             filename = saved[selected]
+            expname = os.path.splitext(filename)[0]
+            data = joblib.load(os.path.join('temp_pickles', filename))
             description = [d['name'] for d in data]
             dat = [d['dat'] for d in data]
-            eval = Evaluation(dat, filename, description)
+            evaluation = Evaluation(dat, expname, description)
 
-            multi_summary['Qs'][saved[selected]] = eval.data[0][0]['info']['Qx'][0]
+            multi_summary['Qs'][saved[selected]] = evaluation.data[0][0]['info']['Qx'][0]
 
             ''''''''''''''''''''''''''''''''''''''''''
 
             '''Individual analysis'''
 
-            eval.simulation_infection_plot(size_tup=(5.0, 3.7), granularity=0.001, save=True)
-
-            # eval.infections_and_interventions_complete(save=True)
-            # eval.simulation_treatment_plot(granularity=0.001, save=True)
-            # eval.present_discounted_loss(plot=True, save=True)
+            evaluation.simulation_plot(
+                process='X', filename='simulation_infection_summary',
+                granularity=1.0, save=True)
+            evaluation.simulation_plot(
+                process='H', filename='simulation_treatment_summary',
+                granularity=1.0, save=True)
+            
+            # evaluation.infections_and_interventions_complete(save=True)
+            # evaluation.present_discounted_loss(plot=True, save=True)
 
             ''''''''''''''''''''''''''''''''''''''''''
             
@@ -67,7 +63,7 @@ if __name__ == '__main__':
             # summary_tup = eval.infections_and_interventions_complete(size_tup = (8, 5), save=True)
             # multi_summary['infections_and_interventions'][saved[selected]] = summary_tup
 
-            summary_tup = eval.summarize_interventions_and_intensities()
+            summary_tup = evaluation.summarize_interventions_and_intensities()
             # multi_summary['stats_intervention_intensities'][saved[selected]] = summary_tup
 
 
@@ -86,6 +82,6 @@ if __name__ == '__main__':
         multi_summary = dum[2]
 
     '''Comparative analysis'''
-    multi_eval = MultipleEvaluations(saved, all_selected, multi_summary)
+    # multi_eval = MultipleEvaluations(saved, all_selected[-1], multi_summary)
 
     # multi_eval.compare_infections(size_tup=(5.0, 3.7), save=True)
