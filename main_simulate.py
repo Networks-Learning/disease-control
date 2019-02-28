@@ -1,3 +1,8 @@
+"""
+
+Main script to simulate experiments
+
+"""
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
@@ -6,10 +11,29 @@ import os
 
 from experiment import Experiment
 
-plt.switch_backend('agg')
+OUTPUT_DIR = 'temp_pickles/'
+
+
+def build_filename(exp):
+    """
+    Find and construct an available filename for the experiment `exp`.
+    The file is index by _v0, _v1, _v2, ...
+    """
+    filename_prefix = (f"{exp.name:s}_"
+                       f"Q_{exp.cost_dict['Qlam']:.0f}_"
+                       f"{exp.cost_dict['Qx']:.0f}")
+    filepath_prefix = os.path.join(OUTPUT_DIR, filename_prefix)
+    j = 0
+    filename = f"{filepath_prefix}_v{j}.pkl"
+    while os.path.exists(filename):
+        j += 1
+        filename = f"{filepath_prefix}_v{j}.pkl"
+    return filename
 
 
 if __name__ == '__main__':
+
+    plt.switch_backend('agg')
 
     # Construct the adjacency  matrix A of the propagation network
     net = nx.read_edgelist('data/contiguous-usa.txt')
@@ -26,7 +50,7 @@ if __name__ == '__main__':
     # Experiments
     experiments = [
         Experiment('test_all',
-                   sim_dict={'total_time': 10.00, 'trials_per_setting': 2},
+                   sim_dict={'total_time': 10.00, 'trials_per_setting': 30},
                    policy_list=[
                       'SOC',
                       'TR', 'TR-FL',
@@ -38,18 +62,10 @@ if __name__ == '__main__':
     ]
 
     # Simulation (Nothing below should be changed)
-    for experiment in experiments:
-        data = experiment.run(A, X_init)
+    for exp in experiments:
+        print(f"Running experiment `{exp.name}`...")
+        data = exp.run(A, X_init)
 
-        dir = 'temp_pickles/'
-        filename = dir \
-            + experiment.name \
-            + '_Q_{}_{}_v'.format(int(experiment.cost_dict['Qlam']),
-                                  int(experiment.cost_dict['Qx']))
-
-        # create unique file for results, indexed by _v0, _v1, _v2, ...
-        j = 0
-        while os.path.exists(filename + str(j) + '.pkl'):
-            j += 1
-        final = filename + str(j) + '.pkl'
-        joblib.dump(data, final)
+        filename = build_filename(exp)
+        print(f"Save the simulation to: {filename:s}")
+        joblib.dump(data, filename)

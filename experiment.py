@@ -46,8 +46,8 @@ class Experiment:
             'TR': 0.003,
             'MN': 0.0007,
             'LN': 0.0008,
-            'LRSR': 22.0,
-            'MCM': 1.0,  # TODO
+            'LRSR': 22.807,
+            'MCM': 22.807,
             'FL_info': dict(N=356.1000, max_u=19.5352),
         }
         # Experiment name
@@ -83,9 +83,10 @@ class Experiment:
         result = [{"dat": [], "name": policy} for policy in self.policy_list]
         # Simulate number of times
         for tr in range(self.sim_dict['trials_per_setting']):
+            print(f"=== Trial #{tr:d}")
             # ...for every requested policy
             for j, policy in enumerate(self.policy_list):
-                print(f"Trial #{tr:d} - policy {policy:s}", end="\r")
+                print(f"   Policy: {policy:s}...")
                 # Simulate a trajectory of the SIS dynamical system under
                 # various control strategies
                 system = SISDynamicalSystem(

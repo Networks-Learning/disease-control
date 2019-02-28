@@ -1,10 +1,12 @@
 """
+
 Implement the MaxCutMinimization (MCM) strategy to suppress SIS epidemics, as
 defined in the following paper.
 
 K. Scaman, A. Kalogeratos and N. Vayatis, "Suppressing Epidemics in Networks
 Using Priority Planning," in IEEE Transactions on Network Science and
 Engineering, vol. 3, no. 4, pp. 271-285, Oct.-Dec. 2016.
+
 """
 import networkx as nx
 import numpy as np

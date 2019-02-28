@@ -132,7 +132,7 @@ class Evaluation:
             f_of_t = t, 0
         return self.__integrateF(f_of_t, eta)
 
-    def __computeIntH(self, trial, custom_eta=None):
+    def _computeIntH(self, trial, custom_eta=None):
         """
         Compute integral from 0 to T of |H|_1 dt for a given trial.
         """
@@ -218,7 +218,7 @@ class Evaluation:
         intX_m = np.array([np.mean(h) for h in intX_by_heuristic])
         intX_s = np.array([np.std(h) for h in intX_by_heuristic])
 
-        intH_by_heuristic = [[self.__computeIntH(trial, custom_eta=0.0)
+        intH_by_heuristic = [[self._computeIntH(trial, custom_eta=0.0)
                               for trial in heuristic] for heuristic in tqdm(self.data)]
 
         intH_m = np.array([np.mean(h) for h in intH_by_heuristic])
@@ -303,13 +303,8 @@ class Evaluation:
         plt.title(r"Infection events and discrete interventions")
 
         if save:
-            dpi = 400
-            plt.tight_layout()
-            fig = plt.gcf()  # get current figure
-            fig.set_size_inches(size_tup)  # width, height
-            plt.savefig(os.path.join(
-                self.dirname, 'infections_and_interventions_complete.png'),
-                format='png', frameon=False, dpi=dpi)
+            fig_filename = os.path.join(self.dirname, "infections_and_interventions_complete" + '.pdf')
+            plt.savefig(fig_filename, format='pdf', frameon=False, dpi=300)
         else:
             plt.show()
 
@@ -381,8 +376,15 @@ class Evaluation:
         hf = HelperFunc()
 
         # Intensities
-        max_intensities = [[[np.max(hf.sps_values(trial['u'], t, summed=False)) for t in hf.all_arrivals(trial['u'])]
-                            for trial in heuristic] for heuristic in tqdm(self.data)]
+        max_intensities = np.zeros((len(self.data), len(self.data[0])), dtype=object)
+        for i, heuristic in enumerate(tqdm(self.data)):
+            for j, trial in enumerate(heuristic):
+                all_arrivals = hf.all_arrivals(trial['u'])
+                max_intensities[i, j] = np.zeros(len(all_arrivals))
+                for k, t in enumerate(all_arrivals):
+                    max_intensities[i, j][k] = np.max(
+                        hf.sps_values(trial['u'], t, summed=False))
+
         max_per_trial = [[np.max(trial) for trial in heuristic]
                          for heuristic in tqdm(max_intensities)]
         max_per_heuristic = [np.max(heuristic) for heuristic in max_per_trial]

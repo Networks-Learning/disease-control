@@ -45,7 +45,7 @@ class SISDynamicalSystem:
         else:
             raise ValueError("Dimensions don't match")
 
-    def __simulate(self, policy_fun, time, plot, plot_update=1.0):
+    def _simulate(self, policy_fun, time, plot, plot_update=1.0):
         """
         Simulate the SIS dynamical system using Ogata's thinning algorithm over
         the time period policy_fun must be of shape: (1,) -> (N,)
@@ -146,14 +146,14 @@ class SISDynamicalSystem:
         while t < self.ttotal:
 
             # Compute sum of intensities
-            lambdaY, lambdaW, lambdaN = self.__getPoissonIntensities(t, policy_fun)
+            lambdaY, lambdaW, lambdaN = self._getPoissonIntensities(t, policy_fun)
             lambda_all = np.sum(lambdaY) + np.sum(lambdaW) + np.sum(lambdaN)
             if lambda_all == 0:
                 # infection went extinct
                 # print("Infection went extinct at t = {}".format(round(t, 3)))
                 assert(not np.any([self.X[i].value_at(t)
                                    for i in range(self.N)]))
-                progress_bar.update(self.ttotal - t)
+                progress_bar.update(np.round(self.ttotal - t, 2))
                 t = self.ttotal
                 break
 
@@ -227,12 +227,28 @@ class SISDynamicalSystem:
         progress_bar.close()
 
         # return collected data for analysis
-        return self.__getCollectedData()
+        return self._getCollectedData()
 
-    def __getPoissonIntensities(self, t, policy_fun):
+    def _getPoissonIntensities(self, t, policy_fun):
         """
         Compute and return intensities of counting processes Y, W, N as defined
         by the model.
+
+        Parameters
+        ----------
+        t : float
+            Time
+        policy_fun : callable
+            Policy function
+
+        Returns
+        -------
+        lambdaY
+            Intensities of the infection process Y
+        lambdaW
+            Intensities of the recovery process W
+        lambdaN
+            Intensities of the treatment process N
         """
         # Update control policy for every node
         for i, control in enumerate(policy_fun(t)):
@@ -277,27 +293,27 @@ class SISDynamicalSystem:
         time = sim_dict['total_time']
 
         if policy == 'SOC':
-            return self.__simulate(self.__getOptPolicy, time, plot)
+            return self._simulate(self._getOptPolicy, time, plot)
         elif policy == 'TR':
-            return self.__simulate(lambda t: self.__getTrivialPolicy(baselines_dict['TR'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), time, plot)
         elif policy == 'TR-FL':
-            return self.__simulate(lambda t: self.__getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), time, plot)
         elif policy == 'MN':
-            return self.__simulate(lambda t: self.__getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), time, plot)
         elif policy == 'MN-FL':
-            return self.__simulate(lambda t: self.__getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), time, plot)
         elif policy == 'LN':
-            return self.__simulate(lambda t: self.__getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), time, plot)
         elif policy == 'LN-FL':
-            return self.__simulate(lambda t: self.__getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), time, plot)
         elif policy == 'LRSR':
-            return self.__simulate(lambda t: self.__getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), time, plot)
+            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), time, plot)
         elif policy == 'MCM':
-            return self.__simulate(lambda t: self.__getMCMPolicy(baselines_dict['MCM'], t), time, plot)
+            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), time, plot)
         else:
             raise ValueError('Invalid policy name.')
 
-    def __getCollectedData(self):
+    def _getCollectedData(self):
         """
         Create a dict containing all the information of the simulation for
         analysis.
@@ -322,7 +338,7 @@ class SISDynamicalSystem:
             'u': self.u
         }
 
-    def __getOptPolicy(self, t):
+    def _getOptPolicy(self, t):
         """
         Return the stochastic optimal control policy u at time t.
         """
@@ -392,7 +408,7 @@ class SISDynamicalSystem:
 
         return self.last_opt
 
-    def __getTrivialPolicy(self, const, t):
+    def _getTrivialPolicy(self, const, t):
         """
         Return trivial policy u at time t
         intensity(v) ~ Qx * Qlam^-1 * X * (1 - H).
@@ -405,7 +421,7 @@ class SISDynamicalSystem:
             const * np.ones(self.N),
             np.multiply(state, self.Qx / self.Qlam))
 
-    def __getMNDegreeHeuristicPolicy(self, const, t):
+    def _getMNDegreeHeuristicPolicy(self, const, t):
         """
         Return MN (most neighbors) degree heuristic policy u at time t
         intensity(v) ~ deg(v) * Qx * Qlam^-1 * X * (1 - H).
@@ -418,7 +434,7 @@ class SISDynamicalSystem:
         return np.multiply(
             const * deg, np.multiply(state, self.Qx / self.Qlam))
 
-    def __getLNDegreeHeuristicPolicy(self, const, t):
+    def _getLNDegreeHeuristicPolicy(self, const, t):
         """
         Return LN (least neighbors) degree heuristic policy u at time t
         intensity(v) ~ (maxdeg - deg(v) + 1) * Qx * Qlam^-1 * X * (1 - H).
@@ -432,7 +448,7 @@ class SISDynamicalSystem:
             const * ((np.max(deg) + 1) * np.ones(self.N) - deg),
             np.multiply(state, self.Qx / self.Qlam))
 
-    def __getLRSRHeuristicPolicy(self, const, t):
+    def _getLRSRHeuristicPolicy(self, const, t):
         """
         Returns Largest reduction in spectral radius (LRSR) heuristic policy u
         at time t. u = 1/rank where rank is priority order of LRSR (independent
@@ -476,7 +492,7 @@ class SISDynamicalSystem:
                                  "Something went wrong."))
         return u
 
-    def __getMCMPolicy(self, const, t):
+    def _getMCMPolicy(self, const, t):
         """
         Return the adapted heuristic policy MaxCutMinimzation (MCM) `u` at
         time `t`. The method is adapted to fit the setup where treatment
@@ -495,7 +511,7 @@ class SISDynamicalSystem:
         u[self.mcm_ranking] = ramp
         return u
 
-    def __frontloadPolicy(self, u, frontload_info, t):
+    def _frontloadPolicy(self, u, frontload_info, t):
         """
         Return front-loaded variation of policy u at time t
         """
@@ -519,7 +535,7 @@ class SISDynamicalSystem:
         else:
             return u
 
-    def __getTrivialPolicyFrontLoaded(self, const, frontload_info, t):
+    def _getTrivialPolicyFrontLoaded(self, const, frontload_info, t):
         """
         Return trivial policy u at time t front-loaded to spend interventions
         earlier.
@@ -527,24 +543,24 @@ class SISDynamicalSystem:
         """
 
         # compute front-loaded variant
-        u = self.__getTrivialPolicy(const, t)
-        return self.__frontloadPolicy(u, frontload_info, t)
+        u = self._getTrivialPolicy(const, t)
+        return self._frontloadPolicy(u, frontload_info, t)
 
-    def __getMNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
+    def _getMNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
         """
         Returns MN (most neighbors) degree heuristic policy u at time t,
         Front-loaded: maximum total intensity of SOC over time
         is used distributed across all nodes at all times t
         """
         # compute front-loaded variant
-        u = self.__getMNDegreeHeuristicPolicy(const, t)
-        return self.__frontloadPolicy(u, frontload_info, t)
+        u = self._getMNDegreeHeuristicPolicy(const, t)
+        return self._frontloadPolicy(u, frontload_info, t)
 
-    def __getLNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
+    def _getLNDegreeHeuristicFrontLoaded(self, const, frontload_info, t):
         """
         Returns LN (least neighbors) degree heuristic policy u at time t
         Front-loaded.
         """
         # compute front-loaded variant
-        u = self.__getLNDegreeHeuristicPolicy(const, t)
-        return self.__frontloadPolicy(u, frontload_info, t)
+        u = self._getLNDegreeHeuristicPolicy(const, t)
+        return self._frontloadPolicy(u, frontload_info, t)
