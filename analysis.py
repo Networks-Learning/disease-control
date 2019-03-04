@@ -404,8 +404,8 @@ class Evaluation:
         return 0  # TODO Change back and delete this
 
     def simulation_plot(self, process, figsize=(8, 6), granularity=0.1,
-                        filename='simulation_summary',
-                        save=False, draw_box=False):
+                        filename='simulation_summary', draw_box=False,
+                        save=False):
         """
         Plot a summary of the simulation.
 
@@ -461,7 +461,12 @@ class Evaluation:
         ax.set_xlim([0, ttotal])
         ax.set_xlabel("Elapsed time")
         ax.set_ylim([0, heuristic[0]['info']['N']])
-        ax.set_ylabel("Number of nodes")
+        if process == 'X':
+            ax.set_ylabel("Number of infected nodes")
+        elif process == 'H':
+            ax.set_ylabel("Number of treated nodes")
+        else:
+            ax.set_ylabel("Number of nodes")
 
         # Text box
         if draw_box:

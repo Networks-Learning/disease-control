@@ -50,15 +50,37 @@ if __name__ == '__main__':
     # Experiments
     experiments = [
         Experiment('test_all',
-                   sim_dict={'total_time': 10.00, 'trials_per_setting': 30},
+                   sim_dict={
+                      'total_time': 10.00,
+                      'trials_per_setting': 30
+                   },
+                   param_dict={
+                       'beta':  6.0,
+                       'gamma': 5.0,
+                       'delta': 1.0,
+                       'rho':   5.0,
+                       'eta':   1.0
+                   },
+                   cost_dict={
+                     'Qlam': 1.0,
+                     'Qx': 300.0
+                   },
                    policy_list=[
-                      'SOC',
-                      'TR', 'TR-FL',
-                      'MN', 'MN-FL',
-                      'LN', 'LN-FL',
-                      'LRSR',
-                      'MCM',
-                   ]),
+                       'SOC',
+                       'TR', 'TR-FL',
+                       'MN', 'MN-FL',
+                       'LN', 'LN-FL',
+                       'LRSR',
+                       'MCM',
+                   ],
+                   baselines_dict={
+                       'TR': 0.003,
+                       'MN': 0.0007,
+                       'LN': 0.0008,
+                       'LRSR': 22.807,
+                       'MCM': 22.807,
+                       'FL_info': dict(N=356.1000, max_u=19.5352),
+                   })
     ]
 
     # Simulation (Nothing below should be changed)
