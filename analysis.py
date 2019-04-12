@@ -2,12 +2,10 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from tqdm import tqdm, tqdm_notebook
 import os
 
 from helpers import HelperFunc
-
-PLOT_DIR = 'plots'
 
 matplotlib.rcParams.update({
     "figure.autolayout": False,
@@ -37,9 +35,9 @@ class Evaluation:
     Class that analyzes results of dynamical system simulations
     """
 
-    def __init__(self, data, name, description):
+    def __init__(self, data, plot_dir, description):
         self.data = data
-        self.dirname = os.path.join(PLOT_DIR, name)
+        self.dirname = plot_dir
         self.descr = description
 
         self.colors = 'rggbbkkym'
@@ -194,6 +192,7 @@ class Evaluation:
             if save:
                 plt.savefig(os.path.join(self.dirname, 'PDV_plot.png'),
                             format='png', frameon=False)
+                plt.close()
             else:
                 plt.show()
         print("\nPresent discounted loss (Mean, StdDev) \n")
@@ -201,8 +200,7 @@ class Evaluation:
             print(self.descr[j] + ':\t' + str(round(means[j], 3)) + '\t' + str(round(stddevs[j], 3)) )
         return 0
 
-    def infections_and_interventions_complete(self, size_tup=(15, 10),
-                                              save=False):
+    def infections_and_interventions_complete(self, size_tup=(15, 10), save=False):
         """
         Summarizes simulations in 3 plots
         - Infection coverage (Int X(t) dt) - Total discrete interventions (Sum N(T))
@@ -213,25 +211,25 @@ class Evaluation:
         # Compute statistics for every heuristic
         hf = HelperFunc()
         intX_by_heuristic = [[self.computeIntX(trial, custom_eta=0.0, weight_by_Qx=False)
-                              for trial in heuristic] for heuristic in tqdm(self.data)]
+                              for trial in heuristic] for heuristic in tqdm_notebook(self.data)]
 
         intX_m = np.array([np.mean(h) for h in intX_by_heuristic])
         intX_s = np.array([np.std(h) for h in intX_by_heuristic])
 
         intH_by_heuristic = [[self._computeIntH(trial, custom_eta=0.0)
-                              for trial in heuristic] for heuristic in tqdm(self.data)]
+                              for trial in heuristic] for heuristic in tqdm_notebook(self.data)]
 
         intH_m = np.array([np.mean(h) for h in intH_by_heuristic])
         intH_s = np.array([np.std(h) for h in intH_by_heuristic])
 
         Y_by_heuristic = [[hf.sps_values(trial['Y'], trial['info']['ttotal'], summed=True)
-                           for trial in heuristic] for heuristic in tqdm(self.data)]
+                           for trial in heuristic] for heuristic in tqdm_notebook(self.data)]
 
         Y_m = np.array([np.mean(h) for h in Y_by_heuristic])
         Y_s = np.array([np.std(h) for h in Y_by_heuristic])
 
         N_by_heuristic = [[hf.sps_values(trial['Nc'], trial['info']['ttotal'], summed=True)
-                           for trial in heuristic] for heuristic in tqdm(self.data)]
+                           for trial in heuristic] for heuristic in tqdm_notebook(self.data)]
 
         N_m = np.array([np.mean(h) for h in N_by_heuristic])
         N_s = np.array([np.std(h) for h in N_by_heuristic])
@@ -301,10 +299,12 @@ class Evaluation:
         ax2.set_ylabel(r'Interventions $\sum_{i=1}^{|nodes|} \mathbf{N}_i(t_f)$')
 
         plt.title(r"Infection events and discrete interventions")
+        plt.tight_layout()
 
         if save:
             fig_filename = os.path.join(self.dirname, "infections_and_interventions_complete" + '.pdf')
             plt.savefig(fig_filename, format='pdf', frameon=False, dpi=300)
+            plt.close()
         else:
             plt.show()
 
@@ -355,6 +355,7 @@ class Evaluation:
                 plt.savefig(os.path.join(
                     self.dirname, 'infection_cost_AND_intervention_effort.png'),
                     format='png', frameon=False)
+                plt.close()
             else:
                 plt.show()
 
@@ -441,26 +442,21 @@ class Evaluation:
             # Extract the values of the stochastic processes at all times
             # for each trial
             values = np.zeros((n_trials, len(tspace)))
-            for j, trial in enumerate(tqdm(heuristic)):
+            for j, trial in enumerate(tqdm_notebook(heuristic)):
                 for k, t in enumerate(tspace):
-                    values[j, k] = hf.sps_values(trial[process], t,
-                                                 summed=True)
+                    values[j, k] = hf.sps_values(trial[process], t, summed=True)
             # Compute mean and std over trials
             mean_X_t = np.mean(values, axis=0)
             stddev_X_t = np.std(values, axis=0)
             # Plot the mean +/- std
-            ax.plot(tspace, mean_X_t, color=self.colors[i],
-                    linestyle=self.linestyles[i])
-            ax.fill_between(tspace,
-                            mean_X_t - stddev_X_t,
-                            mean_X_t + stddev_X_t,
-                            alpha=0.3,
-                            edgecolor=self.colors[i],
-                            facecolor=self.colors[i],
+            ax.plot(tspace, mean_X_t, color=self.colors[i], linestyle=self.linestyles[i])
+            ax.fill_between(tspace, mean_X_t - stddev_X_t, mean_X_t + stddev_X_t,
+                            alpha=0.3, edgecolor=self.colors[i], facecolor=self.colors[i], 
                             linewidth=0)
         ax.set_xlim([0, ttotal])
         ax.set_xlabel("Elapsed time")
-        ax.set_ylim([0, heuristic[0]['info']['N']])
+        # ax.set_ylim([0, heuristic[0]['info']['N']])
+        ax.set_ylim(bottom=0)
         if process == 'X':
             ax.set_ylabel("Number of infected nodes")
         elif process == 'H':
@@ -485,6 +481,7 @@ class Evaluation:
         if save:
             fig_filename = os.path.join(self.dirname, filename + '.pdf')
             plt.savefig(fig_filename, format='pdf', frameon=False, dpi=300)
+            plt.close()
         else:
             plt.show()
 
@@ -494,101 +491,135 @@ class MultipleEvaluations:
     Class that plots results of multiple dynamical system simulations.
     """
 
-    def __init__(self, saved, all_selected, multi_summary):
-        self.saved = saved
-        self.all_selected = all_selected
+    def __init__(self, multi_summary, policy_list, n_trials, save_dir):
+        """
+
+        Arguments:
+        ----------
+        multi_summary : dict
+            Data for the plot formatted as follows:
+            {
+                'Qs': {
+                    'expname_1': `qs_1`, (`qs_1` is a float corresponding for parameter qs)
+                    'expname_2': `qs_2`,
+                    ...
+                },
+                'infections_and_interventions': {
+                    'expname_1': (
+                        (
+                            `intX_m`, (mean of integral of process X over the observation period)
+                            `intX_s` (std of integral of process X over the observation period)
+                        ),
+                        (
+                            `N_m`, (mean of process N over the observation period)
+                            `N_s` (std of process N over the observation period)
+                        ),
+                        (
+                            `intH_m`, (mean of integral of process H over the observation period)
+                             `intH_s` (std of integral of process H over the observation period)
+                        ),
+                        (
+                            `Y_m`, (mean of process Y over the observation period)
+                            `Y_s` (mean of process Y over the observation period)
+                        )
+                    ),
+                    ...
+                    ()
+
+                }
+            }
+        """
         self.multi_summary = multi_summary
+        self.policy_list = policy_list
+        self.n_trials = n_trials
 
         self.colors = 'rggbbkkym'
         self.linestyles = ['-', '-', ':', '-', ':', '-', ':', '-', '-']
 
         # create directory for plots
-        directory = 'plots_multi/' + str(self.all_selected)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        self.save_dir = save_dir
+        if not os.path.exists(self.save_dir):
+            os.makedirs(self.save_dir)
 
-    def compare_infections(self, size_tup = (5,5),save=True):
+    def compare_infections(self, size_tup=(8, 6), save=True):
         """
         Compare infections along Qx axis (assuming Qlambda = const = 1.0).
         """
         d = self.multi_summary.get('infections_and_interventions', None)
         Qs = self.multi_summary.get('Qs', None)
 
-        if d is not None and Qs is not None:
-            keys = [self.saved[selected] for selected in self.all_selected]
-            descriptions = [self.saved[selected][1]
-                            for selected in self.all_selected]
-            # assumes data had same methods tested
-            Qx_axis = [Qs[key] for key in keys]
-            infections_axis = {name: [] for name in descriptions[0]}
-            infections_axis_std = {name: [] for name in descriptions[0]}
-            interventions_axis = {name: [] for name in descriptions[0]}
-            interventions_axis_std = {name: [] for name in descriptions[0]}
-            # transfrom stddev into std error
-            n = 30  # trials per simulation
-            # gather data from inputs
-            for i, name in enumerate(descriptions[0]):
-                for key in keys:
-                    # d[key] = ((intX_m, intX_s), (N_m, N_s), (intH_m, intH_s), (Y_m, Y_s))
-                    infections_axis[name].append(d[key][0][0][i])
-                    infections_axis_std[name].append(d[key][0][1][i])
-                    interventions_axis[name].append(d[key][1][0][i])
-                    interventions_axis_std[name].append(d[key][1][1][i])
+        if d is None or Qs is None:
+            raise ValueError('Missing data.')
 
-            plt.rc('text', usetex=True)
+        keys = np.array(list(Qs.keys()))
+        n_exps = len(keys)
 
-            # Set up figure.
-            fig = plt.figure(figsize=(12, 8), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
+        # assumes data had same methods tested
+        infections_axis = {name: np.zeros(n_exps) for name in self.policy_list}
+        infections_axis_std = {name: np.zeros(n_exps) for name in self.policy_list}
+        interventions_axis = {name: np.zeros(n_exps) for name in self.policy_list}
+        interventions_axis_std = {name: np.zeros(n_exps) for name in self.policy_list}
+        
+        # Build X-axis
+        Qx_axis = np.array([Qs[key] for key in keys])
+        # Sort by value
+        sorted_args = np.argsort(Qx_axis)
+        Qx_axis = Qx_axis[sorted_args]
+        keys = keys[sorted_args]
 
-            # ax.set_xscale("log", nonposx='clip')
-            # plt.xscale('log')
+        # Build Y-axis
+        for i, name in enumerate(self.policy_list):
+            for j, key in enumerate(keys):
+                # d[key] = ((intX_m, intX_s), (N_m, N_s), (intH_m, intH_s), (Y_m, Y_s))
+                infections_axis[name][j] = d[key][0][0][i]
+                infections_axis_std[name][j] = d[key][0][1][i] / np.sqrt(self.n_trials)  # transfrom stddev into std error
+                interventions_axis[name][j] = d[key][1][0][i]
+                interventions_axis_std[name][j] = d[key][1][1][i] / np.sqrt(self.n_trials)  # transfrom stddev into std error
 
-            plt.cla()
 
-            hf = HelperFunc()
 
-            legend = []
-            max_infected = 0
-            for ind, name in enumerate(descriptions[0]):
-                legend.append(name)
+        # Set up figure.
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8), facecolor='white')
+        plt.cla()
 
-                # linear axis
-                ax.plot(Qx_axis, infections_axis[name], color=self.colors[ind],
-                        linestyle=self.linestyles[ind])
-                ax.fill_between(
-                    Qx_axis,
-                    np.array(infections_axis[name]) - np.array(interventions_axis_std[name] / np.sqrt(n)),
-                    np.array(infections_axis[name]) + np.array(interventions_axis_std[name] / np.sqrt(n)),
-                    alpha=0.3,
-                    edgecolor=self.colors[ind],
-                    facecolor=self.colors[ind],
-                    linewidth=0)
+        hf = HelperFunc()
 
-                # ax.errorbar(Qx_axis, infections_axis[name], yerr=interventions_axis_std[name])
+        legend = []
+        max_infected = 0
+        for ind, name in enumerate(self.policy_list):
+            legend.append(name)
 
-                if max(infections_axis[name]) > max_infected:
-                    max_infected = max(infections_axis[name])
+            # linear axis
+            ax.plot(Qx_axis, infections_axis[name], color=self.colors[ind],
+                    linestyle=self.linestyles[ind])
+            ax.fill_between(
+                Qx_axis,
+                infections_axis[name] - interventions_axis_std[name],
+                infections_axis[name] + interventions_axis_std[name],
+                alpha=0.3,
+                edgecolor=self.colors[ind],
+                facecolor=self.colors[ind],
+                linewidth=0)
 
-            ax.set_xlim([0.7, max(Qx_axis)])
-            ax.set_xlabel(r'$Q_x$')
-            ax.set_ylim([0, 1.3 * max_infected])
-            ax.set_ylabel(r'Infection coverage $\int_{t_0}^{t_f} \mathbf{X}(t) dt$')
-            ax.legend(legend)
+            # ax.errorbar(Qx_axis, infections_axis[name], yerr=interventions_axis_std[name])
 
-            # ax.set_xscale("log", nonposx='clip')
+            if max(infections_axis[name]) > max_infected:
+                max_infected = max(infections_axis[name])
 
-            if save:
-                dpi = 300
-                # plt.tight_layout()
-                fig = plt.gcf()  # get current figure
-                fig.set_size_inches(size_tup)  # width, height
-                plt.savefig(
-                    'plots_multi/' + str(self.all_selected) +
-                    '/infections_fair_comparison.png', frameon=False, format='png', dpi=dpi)
-            else:
-                plt.show()
+        ax.set_xlim([0.7, max(Qx_axis)])
+        ax.set_xlabel(r'$Q_x$')
+        ax.set_ylim([0, 1.3 * max_infected])
+        ax.set_ylabel(r'Infection coverage $\int_{t_0}^{t_f} \mathbf{X}(t) dt$')
+        ax.legend(legend)
 
+        # ax.set_xscale("log", nonposx='clip')
+
+        if save:
+            dpi = 300
+            # plt.tight_layout()
+            fig = plt.gcf()  # get current figure
+            fig.set_size_inches(size_tup)  # width, height
+            plt.savefig(os.path.join(self.save_dir, 'infections_fair_comparison.png'), frameon=False, format='png', dpi=dpi)
+            plt.close()
         else:
-            print('Error: Missing data.')
-            exit(1)
+            plt.show()
