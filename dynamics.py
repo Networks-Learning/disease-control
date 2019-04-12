@@ -162,7 +162,7 @@ class SISDynamicalSystem:
             w = - np.log(u) / lambda_all
             t = t + w
             self.all_processes.generate_arrival_at(t)
-            progress_bar.update(w)
+            progress_bar.update(float(np.round(w, 2)))
 
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
@@ -455,12 +455,9 @@ class SISDynamicalSystem:
         of X(t) for consistency) const adjusts total intensity to match
         interventions with SOC.
         """
-
         def spectral_radius(A):
             return np.max(np.abs(np.linalg.eigvals(A)))
-
         if t <= 0:
-
             # Brute force:
             # find which node removals reduce spectral radius the most
             tau = spectral_radius(self.A)
@@ -480,16 +477,13 @@ class SISDynamicalSystem:
                 lambda i: 1 / (i + 1), (self.N, ), dtype=float))
             u = np.ones(self.N)
             u[self.spectral_ranking] = ramp
-
         else:
-            if self.spectral_ranking is not None:
-                ramp = const * np.flip(np.fromfunction(
-                    lambda i: 1/(i + 1), (self.N, ), dtype=int))
-                u = np.ones(self.N)
-                u[self.spectral_ranking] = ramp
-            else:
-                raise Exception(("Spectral radius not computed."
-                                 "Something went wrong."))
+            if self.spectral_ranking is None:
+                raise Exception("Spectral radius not computed. Something went wrong.")
+            ramp = const * np.flip(np.fromfunction(
+                lambda i: 1/(i + 1), (self.N, ), dtype=int))
+            u = np.ones(self.N)
+            u[self.spectral_ranking] = ramp
         return u
 
     def _getMCMPolicy(self, const, t):
