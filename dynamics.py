@@ -16,7 +16,7 @@ class SISDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, A, param, cost):
+    def __init__(self, X_init, A, param, cost, verbose=True):
         self.N = A.shape[0]  # Number of nodes
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
@@ -35,6 +35,8 @@ class SISDynamicalSystem:
         self.is_path_following_phase = False
         self.G = nx.from_numpy_matrix(A, parallel_edges=False,
                                       create_using=None)
+
+        self.verbose = verbose
 
         if (len(X_init) == self.N) and (A.shape[0] == A.shape[1]):
             self.A = A
@@ -88,7 +90,9 @@ class SISDynamicalSystem:
         t = 0.0
         self.all_processes = CountingProcess()
         self.last_arrival_type = None
-        progress_bar = tqdm(total=self.ttotal, leave=False)
+        
+        if self.verbose:
+            progress_bar = tqdm(total=self.ttotal, leave=False)
 
         # Plotting functionality
         if plot:
@@ -153,7 +157,10 @@ class SISDynamicalSystem:
                 # print("Infection went extinct at t = {}".format(round(t, 3)))
                 assert(not np.any([self.X[i].value_at(t)
                                    for i in range(self.N)]))
-                progress_bar.update(np.round(self.ttotal - t, 2))
+                
+                if self.verbose:
+                    progress_bar.update(np.round(self.ttotal - t, 2))
+               
                 t = self.ttotal
                 break
 
@@ -162,7 +169,9 @@ class SISDynamicalSystem:
             w = - np.log(u) / lambda_all
             t = t + w
             self.all_processes.generate_arrival_at(t)
-            progress_bar.update(float(np.round(w, 2)))
+            
+            if self.verbose:
+                progress_bar.update(float(np.round(w, 2)))
 
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
@@ -224,7 +233,8 @@ class SISDynamicalSystem:
             plt.ioff()
             plt.show()
 
-        progress_bar.close()
+        if self.verbose:
+            progress_bar.close()
 
         # return collected data for analysis
         return self._getCollectedData()
@@ -558,3 +568,4 @@ class SISDynamicalSystem:
         # compute front-loaded variant
         u = self._getLNDegreeHeuristicPolicy(const, t)
         return self._frontloadPolicy(u, frontload_info, t)
+
