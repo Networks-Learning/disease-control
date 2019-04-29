@@ -17,7 +17,7 @@ class SISDynamicalSystem:
     """
 
     def __init__(self, X_init, A, param, cost, verbose=True):
-        self.N = A.shape[0]  # Number of nodes
+        self.n_nodes = A.shape[0]  # Number of nodes
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
         self.delta = param['delta']  # Recovery rate (spontaneous)
@@ -38,12 +38,12 @@ class SISDynamicalSystem:
 
         self.verbose = verbose
 
-        if (len(X_init) == self.N) and (A.shape[0] == A.shape[1]):
+        if (len(X_init) == self.n_nodes) and (A.shape[0] == A.shape[1]):
             self.A = A
             self.X_init = X_init
             self.Z_init = np.dot(A.T, X_init)
-            self.Qlam = cost['Qlam'] * np.ones(self.N)
-            self.Qx = cost['Qx'] * np.ones(self.N)
+            self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
+            self.Qx = cost['Qx'] * np.ones(self.n_nodes)
         else:
             raise ValueError("Dimensions don't match")
 
@@ -60,26 +60,26 @@ class SISDynamicalSystem:
         # Init the array of infection state processes
         self.X = np.array(
             [StochasticProcess(initial_condition=self.X_init[i])
-             for i in range(self.N)])
+             for i in range(self.n_nodes)])
         # Init the array of neighbors infection state processes
         self.Z = np.array(
             [StochasticProcess(initial_condition=self.Z_init[i])
-             for i in range(self.N)])
+             for i in range(self.n_nodes)])
         # Init the array of treatment state processes
         self.H = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.N)])
+                           for _ in range(self.n_nodes)])
         # Init the array of neighbors treatment state processes
         self.M = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.N)])
+                           for _ in range(self.n_nodes)])
         # Init the array of counting process of infections
-        self.Y = np.array([CountingProcess() for _ in range(self.N)])
+        self.Y = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of counting process of recoveries
-        self.W = np.array([CountingProcess() for _ in range(self.N)])
+        self.W = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of counting process of treatments
-        self.Nc = np.array([CountingProcess() for _ in range(self.N)])
+        self.N = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of process of treatment control rates
         self.u = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.N)])
+                           for _ in range(self.n_nodes)])
 
         # Create infection events for initial infections
         for i in range(len(self.X_init)):
@@ -125,7 +125,7 @@ class SISDynamicalSystem:
                         + s_Qlam + s_Qx
 
                     # plotting
-                    plt.text(0.0, self.N, s, size=12,
+                    plt.text(0.0, self.n_nodes, s, size=12,
                              va="baseline", ha="left", multialignment="left",
                              bbox=dict(fc="none"))
 
@@ -141,7 +141,7 @@ class SISDynamicalSystem:
 
                     ax.set_xlim([0, self.ttotal])
                     ax.set_xlabel('Time')
-                    ax.set_ylim([0, self.N])
+                    ax.set_ylim([0, self.n_nodes])
                     ax.set_ylabel('Number of nodes')
                     ax.legend(['Total infected |X|', 'Total under treatment |H|'])
                     plt.draw()
@@ -156,7 +156,7 @@ class SISDynamicalSystem:
                 # infection went extinct
                 # print("Infection went extinct at t = {}".format(round(t, 3)))
                 assert(not np.any([self.X[i].value_at(t)
-                                   for i in range(self.N)]))
+                                   for i in range(self.n_nodes)]))
                 
                 if self.verbose:
                     progress_bar.update(np.round(self.ttotal - t, 2))
@@ -176,10 +176,10 @@ class SISDynamicalSystem:
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
             p[p == 0.] = 0.  # sets -0.0 to 0.0
-            k = np.random.choice(3 * self.N, p=p)
+            k = np.random.choice(3 * self.n_nodes, p=p)
 
             # Adjust state variables accordingly
-            if k < self.N:  # arrival Y
+            if k < self.n_nodes:  # arrival Y
                 self.last_arrival_type = 'Y'
                 i = k
                 self.Y[i].generate_arrival_at(t)
@@ -191,9 +191,9 @@ class SISDynamicalSystem:
                 for j in np.where(self.A[i])[0]:
                     self.Z[j].generate_arrival_at(t, 1.0)
 
-            elif self.N <= k < 2 * self.N:  # arrival W
+            elif self.n_nodes <= k < 2 * self.n_nodes:  # arrival W
                 self.last_arrival_type = 'W'
-                i = k - self.N
+                i = k - self.n_nodes
                 self.W[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -215,8 +215,8 @@ class SISDynamicalSystem:
 
             else:  # arrival N
                 self.last_arrival_type = 'N'
-                i = k - 2 * self.N
-                self.Nc[i].generate_arrival_at(t)
+                i = k - 2 * self.n_nodes
+                self.N[i].generate_arrival_at(t)
 
                 # dH = dN - H.dW
                 self.H[i].generate_arrival_at(t, 1.0)
@@ -265,9 +265,9 @@ class SISDynamicalSystem:
             self.u[i].generate_arrival_at(t, None, N=control)
 
         # Compute intensities according to model
-        lambdaY = np.array([(1 - self.X[i].value_at(t)) * (self.beta * self.Z[i].value_at(t) - self.gamma * self.M[i].value_at(t)) for i in range(self.N)])
-        lambdaW = np.array([self.X[i].value_at(t) * (self.delta + self.rho * self.H[i].value_at(t)) for i in range(self.N)])
-        lambdaN = np.array([self.u[i].value_at(t) * self.X[i].value_at(t) * (1 - self.H[i].value_at(t)) for i in range(self.N)])
+        lambdaY = np.array([(1 - self.X[i].value_at(t)) * (self.beta * self.Z[i].value_at(t) - self.gamma * self.M[i].value_at(t)) for i in range(self.n_nodes)])
+        lambdaW = np.array([self.X[i].value_at(t) * (self.delta + self.rho * self.H[i].value_at(t)) for i in range(self.n_nodes)])
+        lambdaN = np.array([self.u[i].value_at(t) * self.X[i].value_at(t) * (1 - self.H[i].value_at(t)) for i in range(self.n_nodes)])
         return lambdaY, lambdaW, lambdaN
 
     def simulate_policy(self, policy, baselines_dict, sim_dict, plot=False):
@@ -330,7 +330,7 @@ class SISDynamicalSystem:
         """
         return {
             'info': {
-                'N': self.N,
+                'N': self.n_nodes,
                 'beta': self.beta,
                 'delta': self.delta,
                 'rho': self.rho,
@@ -344,7 +344,7 @@ class SISDynamicalSystem:
             'H': self.H,
             'Y': self.Y,
             'W': self.W,
-            'Nc': self.Nc,
+            'Nc': self.N,
             'u': self.u
         }
 
@@ -353,8 +353,8 @@ class SISDynamicalSystem:
         Return the stochastic optimal control policy u at time t.
         """
         # Array of X[i]'s and H[i]'s at time t
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
+        X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
+        H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
 
         # Only recompute if X changed at last arrival
         if (self.last_arrival_type is None or
@@ -363,7 +363,7 @@ class SISDynamicalSystem:
 
             # Convert X into array of indices where X = 0 (indices_X_is_0)
             # and X = 1 (indices_X_is_1)
-            indices_X_is_0 = np.where(np.ones(self.N) - X)[0]
+            indices_X_is_0 = np.where(np.ones(self.n_nodes) - X)[0]
             indices_X_is_1 = np.where(X)[0]
             cnt_X_is_0 = indices_X_is_0.shape[0]
             cnt_X_is_1 = indices_X_is_1.shape[0]
@@ -402,7 +402,7 @@ class SISDynamicalSystem:
 
             Delta_N = (1 / K1) * (K2 - np.sqrt(2 * K1 * Qlam_1 *
                                                (K3 * np.dot(A_10, d_0) + K4) + np.square(K2)))
-            Delta_N_full = np.zeros(self.N)
+            Delta_N_full = np.zeros(self.n_nodes)
             Delta_N_full[indices_X_is_1] = Delta_N
 
             # Check invariant ensured by LP: Delta_V^N is non-positive.
@@ -413,7 +413,7 @@ class SISDynamicalSystem:
 
             self.last_opt = np.multiply(
                 np.multiply(- Delta_N_full, 1.0 / self.Qlam),
-                np.multiply(X, np.ones(self.N) - H)
+                np.multiply(X, np.ones(self.n_nodes) - H)
             )
 
         return self.last_opt
@@ -424,11 +424,11 @@ class SISDynamicalSystem:
         intensity(v) ~ Qx * Qlam^-1 * X * (1 - H).
         """
         # Array of X[i]'s and H[i]'s at time t
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        state = np.multiply(X, np.ones(self.N) - H)
+        X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
+        H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+        state = np.multiply(X, np.ones(self.n_nodes) - H)
         return np.multiply(
-            const * np.ones(self.N),
+            const * np.ones(self.n_nodes),
             np.multiply(state, self.Qx / self.Qlam))
 
     def _getMNDegreeHeuristicPolicy(self, const, t):
@@ -437,10 +437,10 @@ class SISDynamicalSystem:
         intensity(v) ~ deg(v) * Qx * Qlam^-1 * X * (1 - H).
         """
         # Array of X[i]'s and H[i]'s at time t
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        deg = np.dot(self.A.T, np.ones(self.N))
-        state = np.multiply(X, np.ones(self.N) - H)
+        X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
+        H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+        deg = np.dot(self.A.T, np.ones(self.n_nodes))
+        state = np.multiply(X, np.ones(self.n_nodes) - H)
         return np.multiply(
             const * deg, np.multiply(state, self.Qx / self.Qlam))
 
@@ -450,12 +450,12 @@ class SISDynamicalSystem:
         intensity(v) ~ (maxdeg - deg(v) + 1) * Qx * Qlam^-1 * X * (1 - H).
         """
         # Array of X[i]'s and H[i]'s at time t
-        X = np.array([self.X[i].value_at(t) for i in range(self.N)])
-        H = np.array([self.H[i].value_at(t) for i in range(self.N)])
-        deg = np.dot(self.A.T, np.ones(self.N))
-        state = np.multiply(X, np.ones(self.N) - H)
+        X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
+        H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+        deg = np.dot(self.A.T, np.ones(self.n_nodes))
+        state = np.multiply(X, np.ones(self.n_nodes) - H)
         return np.multiply(
-            const * ((np.max(deg) + 1) * np.ones(self.N) - deg),
+            const * ((np.max(deg) + 1) * np.ones(self.n_nodes) - deg),
             np.multiply(state, self.Qx / self.Qlam))
 
     def _getLRSRHeuristicPolicy(self, const, t):
@@ -472,11 +472,11 @@ class SISDynamicalSystem:
             # find which node removals reduce spectral radius the most
             tau = spectral_radius(self.A)
 
-            node_value_arr = np.zeros(self.N)
-            for n in range(self.N):
+            node_value_arr = np.zeros(self.n_nodes)
+            for n in range(self.n_nodes):
                 A_ = np.copy(self.A)
-                A_[n, :] = np.zeros(self.N)
-                A_[:, n] = np.zeros(self.N)
+                A_[n, :] = np.zeros(self.n_nodes)
+                A_[:, n] = np.zeros(self.n_nodes)
                 node_value_arr[n] = tau - spectral_radius(A_)
 
             # compute ranking
@@ -484,15 +484,15 @@ class SISDynamicalSystem:
 
             # assign intensities according to order
             ramp = const * np.flip(np.fromfunction(
-                lambda i: 1 / (i + 1), (self.N, ), dtype=float))
-            u = np.ones(self.N)
+                lambda i: 1 / (i + 1), (self.n_nodes, ), dtype=float))
+            u = np.ones(self.n_nodes)
             u[self.spectral_ranking] = ramp
         else:
             if self.spectral_ranking is None:
                 raise Exception("Spectral radius not computed. Something went wrong.")
             ramp = const * np.flip(np.fromfunction(
-                lambda i: 1/(i + 1), (self.N, ), dtype=int))
-            u = np.ones(self.N)
+                lambda i: 1/(i + 1), (self.n_nodes, ), dtype=int))
+            u = np.ones(self.n_nodes)
             u[self.spectral_ranking] = ramp
         return u
 
@@ -510,8 +510,8 @@ class SISDynamicalSystem:
             # The priority order should be cached. Raise an exception.
             raise Exception("MCM ranking not computed..."
                             "Something went wrong.")
-        ramp = const / np.arange(self.N, 0, -1)
-        u = np.ones(self.N)
+        ramp = const / np.arange(self.n_nodes, 0, -1)
+        u = np.ones(self.n_nodes)
         u[self.mcm_ranking] = ramp
         return u
 
@@ -522,9 +522,9 @@ class SISDynamicalSystem:
 
         # make sure limit of interventions is not reached yet
         max_count = frontload_info['N']
-        interv_ct = np.sum([self.Nc[i].value_at(t) for i in range(self.N)])
+        interv_ct = np.sum([self.N[i].value_at(t) for i in range(self.n_nodes)])
         if interv_ct > max_count:
-            u = np.zeros(self.N)
+            u = np.zeros(self.n_nodes)
 
         # scale proportionally s.t. max(u) = max(u_SOC)
         if np.sum(u) > 0:
