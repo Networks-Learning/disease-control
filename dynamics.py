@@ -288,9 +288,9 @@ class SISDynamicalSystem:
             - LRSR   : Largest reduction in spectral radius policy
             - MCM    : MaxCut Minimization strategy
         baselines_dict : dict
-            FIXME: WHAT IS THIS ?????
+            Scaling parameters for baselines
         sim_dict : TYPE
-            FIXME: WHAT IS THIS ?????
+            Epidemic parameters for simulation
         plot : bool, optional (default: False)
             Indicate whether or not to plot stuff
 
@@ -568,6 +568,12 @@ class SISDynamicalSystem:
         # compute front-loaded variant
         u = self._getLNDegreeHeuristicPolicy(const, t)
         return self._frontloadPolicy(u, frontload_info, t)
+
+    def _getNoPolicy(self):
+        """
+        Return the no-policy (i.e. absence of treatment) at time t
+        """
+        return np.zeros(self.n_nodes)
 
 
 class SIRDynamicalSystem:
@@ -879,9 +885,9 @@ class SIRDynamicalSystem:
             - LRSR   : Largest reduction in spectral radius policy
             - MCM    : MaxCut Minimization strategy
         baselines_dict : dict
-            FIXME: WHAT IS THIS ?????
+            Scaling parameters for baselines
         sim_dict : TYPE
-            FIXME: WHAT IS THIS ?????
+            Epidemic parameters for simulation
         plot : bool, optional (default: False)
             Indicate whether or not to plot stuff
 
@@ -890,27 +896,27 @@ class SIRDynamicalSystem:
         data : dict
             Collected data from the simulation
         """
-
-        time = sim_dict['total_time']
-
+        total_time = sim_dict['total_time']
         if policy == 'SOC':
-            return self._simulate(self._getOptPolicy, time, plot)
+            return self._simulate(self._getOptPolicy, total_time, plot)
         elif policy == 'TR':
-            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), total_time, plot)
         elif policy == 'TR-FL':
-            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'MN':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), total_time, plot)
         elif policy == 'MN-FL':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'LN':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), total_time, plot)
         elif policy == 'LN-FL':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'LRSR':
-            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), time, plot)
+            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), total_time, plot)
         elif policy == 'MCM':
-            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), time, plot)
+            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), total_time, plot)
+        elif policy == 'NO':
+            return self._simulate(lambda t: self._getNoPolicy(), total_time, plot)
         else:
             raise ValueError('Invalid policy name.')
 
@@ -1157,7 +1163,7 @@ class SIRDynamicalSystem:
         u = self._getLNDegreeHeuristicPolicy(const, t)
         return self._frontloadPolicy(u, frontload_info, t)
 
-    def _getNoPolicy(self, const, t):
+    def _getNoPolicy(self):
         """
         Return the no-policy (i.e. absence of treatment) at time t
         """
