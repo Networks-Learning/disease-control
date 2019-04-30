@@ -299,27 +299,27 @@ class SISDynamicalSystem:
         data : dict
             Collected data from the simulation
         """
-
-        time = sim_dict['total_time']
-
+        total_time = sim_dict['total_time']
         if policy == 'SOC':
-            return self._simulate(self._getOptPolicy, time, plot)
+            return self._simulate(self._getOptPolicy, total_time, plot)
         elif policy == 'TR':
-            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), total_time, plot)
         elif policy == 'TR-FL':
-            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'MN':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), total_time, plot)
         elif policy == 'MN-FL':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'LN':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), total_time, plot)
         elif policy == 'LN-FL':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), total_time, plot)
         elif policy == 'LRSR':
-            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), time, plot)
+            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), total_time, plot)
         elif policy == 'MCM':
-            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), time, plot)
+            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), total_time, plot)
+        elif policy == 'NO':
+            return self._simulate(lambda t: self._getNoPolicy(), total_time, plot)
         else:
             raise ValueError('Invalid policy name.')
 
@@ -576,7 +576,7 @@ class SIRDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, A, param, cost, verbose=True):
+    def __init__(self, X_init, A, param, cost, verbose=True, debug=False):
         self.n_nodes = A.shape[0]  # Number of nodes
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
@@ -593,6 +593,7 @@ class SIRDynamicalSystem:
         self.G = nx.from_numpy_matrix(A, parallel_edges=False, create_using=nx.Graph)
 
         self.verbose = verbose
+        self.debug = debug
 
         if (len(X_init) == self.n_nodes and (A.shape[0] == A.shape[1])):
             self.A = A
@@ -709,10 +710,27 @@ class SIRDynamicalSystem:
             lambdaY, lambdaW, lambdaN = self._getPoissonIntensities(t, policy_fun)
             lambda_all = np.sum(lambdaY) + np.sum(lambdaW) + np.sum(lambdaN)
 
-            print("\n=======================")
-            print(f"t={t:.4f}")
-            print(f"lamY={lambdaY:.2f}, lamW={lambdaW:.2f}, lamN={lambdaN:.2f}")
-            print(f"lamSUM={lambda_all:.2f}")
+            if self.debug:
+                print("\n------")
+                print(f"t={t:.4f}")
+                print((f"lamY={lambdaY.sum():.2f}, "
+                       f"lamW={lambdaW.sum():.2f}, "
+                       f"lamN={lambdaN.sum():.2f}, "
+                       f"lamSUM={lambda_all:.2f}"))
+                Y = np.array([self.Y[i].value_at(t) for i in range(self.n_nodes)])
+                W = np.array([self.W[i].value_at(t) for i in range(self.n_nodes)])
+                H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+                assert Y.max() <= 1, "Y should have values at most 1!"
+                assert W.max() <= 1, "Y should have values at most 1!"
+                assert H.max() <= 1, "Y should have values at most 1!"
+                Y = Y.astype(bool)
+                W = W.astype(bool)
+                H = H.astype(bool)
+                print('Susceptible nodes:', np.where(~Y & ~W)[0])
+                print('Infected nodes:', np.where(Y & ~W)[0])
+                print('Recovered nodes:', np.where(Y & W)[0])
+                print('Treated nodes:', np.where(H)[0])
+                assert np.sum(~Y & W) == 0, "There are recovered but not infected nodes!"
             
             # Infection went extinct
             if lambda_all == 0:
@@ -731,6 +749,8 @@ class SIRDynamicalSystem:
             w = - np.log(u) / lambda_all
             t = t + w
             self.all_processes.generate_arrival_at(t)
+
+            print(f"t+w={t:.4f}")
             
             if self.verbose:
                 progress_bar.update(float(np.round(w, 2)))
@@ -744,6 +764,9 @@ class SIRDynamicalSystem:
             if k < self.n_nodes:  # arrival Y (infection)
                 self.last_arrival_type = 'Y'
                 i = k
+
+                print(f'Process INFECTION event at node {i:d}')
+
                 self.Y[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -756,6 +779,9 @@ class SIRDynamicalSystem:
             elif self.n_nodes <= k < 2 * self.n_nodes:  # arrival W (recovery)
                 self.last_arrival_type = 'W'
                 i = k - self.n_nodes
+
+                print(f'Process RECOVERY event at node {i:d}')
+
                 self.W[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -778,6 +804,9 @@ class SIRDynamicalSystem:
             else:  # arrival N (treatment)
                 self.last_arrival_type = 'N'
                 i = k - 2 * self.n_nodes
+
+                print(f'Process TREATMENT event at node {i:d}')
+
                 self.N[i].generate_arrival_at(t)
 
                 # dH = dN - H.dW
@@ -1127,3 +1156,9 @@ class SIRDynamicalSystem:
         # compute front-loaded variant
         u = self._getLNDegreeHeuristicPolicy(const, t)
         return self._frontloadPolicy(u, frontload_info, t)
+
+    def _getNoPolicy(self, const, t):
+        """
+        Return the no-policy (i.e. absence of treatment) at time t
+        """
+        return np.zeros(self.n_nodes)
