@@ -1,7 +1,8 @@
 
+import time
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from tqdm import tqdm, tqdm_notebook
 import scipy.optimize
 import networkx as nx
 
@@ -16,7 +17,7 @@ class SISDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, A, param, cost, verbose=True):
+    def __init__(self, X_init, A, param, cost, verbose=True, notebook=False):
         self.n_nodes = A.shape[0]  # Number of nodes
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
@@ -37,6 +38,7 @@ class SISDynamicalSystem:
                                       create_using=None)
 
         self.verbose = verbose
+        self.notebook = notebook
 
         if (len(X_init) == self.n_nodes) and (A.shape[0] == A.shape[1]):
             self.A = A
@@ -92,7 +94,10 @@ class SISDynamicalSystem:
         self.last_arrival_type = None
         
         if self.verbose:
-            progress_bar = tqdm(total=self.ttotal, leave=False)
+            if self.notebook:
+                pass
+            else: 
+                progress_bar = tqdm(total=self.ttotal, leave=False)
 
         # Plotting functionality
         if plot:
@@ -147,6 +152,10 @@ class SISDynamicalSystem:
                     plt.draw()
                     plt.pause(1e-10)
 
+        self.num_inf = int(self.X_init.sum())
+        self.num_suc = self.n_nodes - self.num_inf
+        self.num_treated = 0
+
         while t < self.ttotal:
 
             # Compute sum of intensities
@@ -154,12 +163,18 @@ class SISDynamicalSystem:
             lambda_all = np.sum(lambdaY) + np.sum(lambdaW) + np.sum(lambdaN)
             if lambda_all == 0:
                 # infection went extinct
-                # print("Infection went extinct at t = {}".format(round(t, 3)))
                 assert(not np.any([self.X[i].value_at(t)
                                    for i in range(self.n_nodes)]))
                 
                 if self.verbose:
-                    progress_bar.update(np.round(self.ttotal - t, 2))
+                    if self.notebook:
+                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
+                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
+                              f"H: {self.num_treated:>4d}"
+                              "           ", 
+                              end='')
+                    else:
+                        progress_bar.update(np.round(self.ttotal - t, 2))
                
                 t = self.ttotal
                 break
@@ -171,7 +186,14 @@ class SISDynamicalSystem:
             self.all_processes.generate_arrival_at(t)
             
             if self.verbose:
-                progress_bar.update(float(np.round(w, 2)))
+                if self.notebook:
+                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
+                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
+                              f"H: {self.num_treated:>4d}"
+                              "           ", 
+                              end='')
+                else:
+                    progress_bar.update(float(np.round(w, 2)))
 
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
@@ -182,6 +204,10 @@ class SISDynamicalSystem:
             if k < self.n_nodes:  # arrival Y
                 self.last_arrival_type = 'Y'
                 i = k
+
+                self.num_suc -= 1
+                self.num_inf += 1
+
                 self.Y[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -194,6 +220,10 @@ class SISDynamicalSystem:
             elif self.n_nodes <= k < 2 * self.n_nodes:  # arrival W
                 self.last_arrival_type = 'W'
                 i = k - self.n_nodes
+                
+                self.num_suc += 1
+                self.num_inf -= 1
+
                 self.W[i].generate_arrival_at(t)
 
                 # dX = dY - dW
@@ -203,19 +233,22 @@ class SISDynamicalSystem:
                 for j in np.where(self.A[i])[0]:
                     self.Z[j].generate_arrival_at(t, -1.0)
 
-                # dH = dN - H.dW
+                
                 prev_H = self.H[i].value_at(t)
                 if prev_H == 1:
+                    # dH = dN - H.dW
                     self.H[i].generate_arrival_at(t, -1.0)
-
-                # dM = A(dN - H.dW)
-                if prev_H == 1:
+                    # dM = A(dN - H.dW)
                     for j in np.where(self.A[i])[0]:
                         self.M[j].generate_arrival_at(t, -1.0)
+                    self.num_treated -= 1
 
             else:  # arrival N
                 self.last_arrival_type = 'N'
                 i = k - 2 * self.n_nodes
+
+                self.num_treated += 1
+
                 self.N[i].generate_arrival_at(t)
 
                 # dH = dN - H.dW
@@ -234,7 +267,10 @@ class SISDynamicalSystem:
             plt.show()
 
         if self.verbose:
-            progress_bar.close()
+            if self.notebook:
+                print()
+            else:
+                progress_bar.close()
 
         # return collected data for analysis
         return self._getCollectedData()
@@ -582,13 +618,18 @@ class SIRDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, A, param, cost, verbose=True, debug=False):
+    def __init__(self, X_init, A, param, cost, verbose=True, debug=False, notebook=False):
         self.n_nodes = A.shape[0]  # Number of nodes
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
         self.delta = param['delta']  # Recovery rate (spontaneous)
         self.rho = param['rho']  # Recovery rate from treatment
         self.eta = param['eta']  # Exponential discount rate for SOC strategy
+
+        if self.gamma > self.beta:
+            raise ValueError("`beta` must be larger than `gamma`!")
+        if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
+            raise ValueError("Epidemic parameters must be non-negative!")
 
         # LRSR
         self.spectral_ranking = None
@@ -600,6 +641,7 @@ class SIRDynamicalSystem:
 
         self.verbose = verbose
         self.debug = debug
+        self.notebook = notebook
 
         if (len(X_init) == self.n_nodes and (A.shape[0] == A.shape[1])):
             self.A = A
@@ -610,7 +652,7 @@ class SIRDynamicalSystem:
         else:
             raise ValueError("Dimensions don't match")
 
-    def _simulate(self, policy_fun, time, plot, plot_update=1.0):
+    def _simulate(self, policy_fun, total_time, plot, plot_update=1.0):
         """
         Simulate the SIS dynamical system using Ogata's thinning algorithm over
         the time period policy_fun must be of shape: (1,) -> (N,)
@@ -618,7 +660,7 @@ class SIRDynamicalSystem:
         """
 
         # Initialize the end time of the simulation
-        self.ttotal = time
+        self.ttotal = total_time
 
         # Init the array of infection state processes
         self.X = np.array(
@@ -655,60 +697,16 @@ class SIRDynamicalSystem:
         self.last_arrival_type = None
         
         if self.verbose:
-            progress_bar = tqdm(total=self.ttotal, leave=False)
+            if self.notebook:
+                pass
+            else: 
+                progress_bar = tqdm(total=self.ttotal, leave=False)
 
-        # Plotting functionality
-        if plot:
-            # Set up figure.
-            fig = plt.figure(figsize=(12, 8), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            # plt.ion()
-            # plt.show(block=False)
-            self.already_plotted = set()
-
-            def callback(t, final=False):
-                new_plot = divmod(t, plot_update)[0]
-                if new_plot not in self.already_plotted or final:
-
-                    self.already_plotted.add(new_plot)
-
-                    plt.cla()
-
-                    # string creation
-                    s_beta = r'$\beta$: ' + str(self.beta) + ', '
-                    s_delta = r'$\delta$: ' + str(self.delta) + ', '
-                    s_rho = r'$\rho$: ' + str(self.rho) + ', '
-                    s_gamma = r'$\gamma$: ' + str(self.gamma) + ', '
-                    s_eta = r'$\eta$: ' + str(self.eta)
-                    s_Qlam = r'Q$_{\lambda}$: ' + \
-                        str(np.mean(self.Qlam)) + ', '
-                    s_Qx = 'Q$_{X}$: ' + str(np.mean(self.Qx))
-                    s = s_beta + s_gamma + '\n' \
-                        + s_delta + s_rho + s_eta + '\n' \
-                        + s_Qlam + s_Qx
-
-                    # plotting
-                    plt.text(0.0, self.n_nodes, s, size=12,
-                             va="baseline", ha="left", multialignment="left",
-                             bbox=dict(fc="none"))
-
-                    # helper functions
-                    hf = HelperFunc()
-
-                    tX, yX = hf.step_sps_values_over_time(self.X, summed=True)
-                    tH, yH = hf.step_sps_values_over_time(self.H, summed=True)
-
-                    print(tX, yX)
-                    ax.plot(tX, yX)
-                    ax.plot(tH, yH)
-
-                    ax.set_xlim([0, self.ttotal])
-                    ax.set_xlabel('Time')
-                    ax.set_ylim([0, self.n_nodes])
-                    ax.set_ylabel('Number of nodes')
-                    ax.legend(['Total infected |X|', 'Total under treatment |H|'])
-                    plt.draw()
-                    plt.pause(1e-10)
+        self.num_inf = int(np.array([self.Y[i].value_at(t) for i in range(self.n_nodes)]).sum())
+        self.num_suc = self.n_nodes - self.num_inf
+        self.num_rec = 0
+        self.num_treated = 0
+        last_time = time.time()
 
         while t < self.ttotal:
 
@@ -732,10 +730,10 @@ class SIRDynamicalSystem:
                 Y = Y.astype(bool)
                 W = W.astype(bool)
                 H = H.astype(bool)
-                print('Susceptible nodes:', np.where(~Y & ~W)[0])
-                print('Infected nodes:', np.where(Y & ~W)[0])
-                print('Recovered nodes:', np.where(Y & W)[0])
-                print('Treated nodes:', np.where(H)[0])
+                print('Susceptible nodes:', len(np.where(~Y & ~W)[0]))
+                print('Infected nodes:', len(np.where(Y & ~W)[0]))
+                print('Recovered nodes:', len(np.where(Y & W)[0]))
+                print('Treated nodes:', len(np.where(H)[0]))
                 assert np.sum(~Y & W) == 0, "There are recovered but not infected nodes!"
             
             # Infection went extinct
@@ -745,7 +743,19 @@ class SIRDynamicalSystem:
                                    for i in range(self.n_nodes)]))
                 
                 if self.verbose:
-                    progress_bar.update(np.round(self.ttotal - t, 2))
+                    if self.notebook:
+                        this_time = time.time()
+                        iter_speed = 1 / (this_time - last_time)
+                        last_time = this_time
+                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
+                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
+                              f"R: {self.num_rec:d}, H: {self.num_treated:d}, "
+                              f"lY: {lambdaY.sum():.2f}, lW: {lambdaW.sum():.2f}, lN: {lambdaN.sum():.2f} | "
+                              f"{iter_speed:.2f} iter/s"
+                              "           ", 
+                              end='')
+                    else:
+                        progress_bar.update(np.round(self.ttotal - t, 2))
                
                 t = self.ttotal
                 break
@@ -756,10 +766,24 @@ class SIRDynamicalSystem:
             t = t + w
             self.all_processes.generate_arrival_at(t)
 
-            print(f"t+w={t:.4f}")
+            if self.debug:
+                print(f"t+w={t:.4f}")
             
             if self.verbose:
-                progress_bar.update(float(np.round(w, 2)))
+                if self.notebook:
+                    if self.notebook:
+                        this_time = time.time()
+                        iter_speed = 1 / (this_time - last_time)
+                        last_time = this_time
+                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
+                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
+                              f"R: {self.num_rec:d}, H: {self.num_treated:d}, "
+                              f"lY: {lambdaY.sum():.2f}, lW: {lambdaW.sum():.2f}, lN: {lambdaN.sum():.2f} | "
+                              f"{iter_speed:.2f} iter/s"
+                              "           ", 
+                              end='')
+                else:
+                    progress_bar.update(np.round(w, 2))
 
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
@@ -770,8 +794,12 @@ class SIRDynamicalSystem:
             if k < self.n_nodes:  # arrival Y (infection)
                 self.last_arrival_type = 'Y'
                 i = k
+                
+                if self.debug:
+                    print(f'Process INFECTION event at node {i:d}')
 
-                print(f'Process INFECTION event at node {i:d}')
+                self.num_suc -= 1
+                self.num_inf += 1
 
                 self.Y[i].generate_arrival_at(t)
 
@@ -786,7 +814,11 @@ class SIRDynamicalSystem:
                 self.last_arrival_type = 'W'
                 i = k - self.n_nodes
 
-                print(f'Process RECOVERY event at node {i:d}')
+                if self.debug:
+                    print(f'Process RECOVERY event at node {i:d}')
+
+                self.num_inf -= 1
+                self.num_rec += 1
 
                 self.W[i].generate_arrival_at(t)
 
@@ -797,21 +829,24 @@ class SIRDynamicalSystem:
                 for j in np.where(self.A[i])[0]:
                     self.Z[j].generate_arrival_at(t, -1.0)
 
-                # dH = dN - H.dW
+                
                 prev_H = self.H[i].value_at(t)
                 if prev_H == 1:
+                    # dH = dN - H.dW
                     self.H[i].generate_arrival_at(t, -1.0)
-
-                # dM = A(dN - H.dW)
-                if prev_H == 1:
+                    # dM = A(dN - H.dW)
                     for j in np.where(self.A[i])[0]:
                         self.M[j].generate_arrival_at(t, -1.0)
+                    self.num_treated -= 1
 
             else:  # arrival N (treatment)
                 self.last_arrival_type = 'N'
                 i = k - 2 * self.n_nodes
 
-                print(f'Process TREATMENT event at node {i:d}')
+                if self.debug:
+                    print(f'Process TREATMENT event at node {i:d}')
+
+                self.num_treated += 1
 
                 self.N[i].generate_arrival_at(t)
 
@@ -831,7 +866,10 @@ class SIRDynamicalSystem:
             plt.show()
 
         if self.verbose:
-            progress_bar.close()
+            if self.notebook:
+                print()
+            else:
+                progress_bar.close()
 
         # return collected data for analysis
         return self._getCollectedData()
@@ -990,7 +1028,7 @@ class SIRDynamicalSystem:
             b_eq = K4 / K3 - epsilon_expr
 
             result = scipy.optimize.linprog(obj, A_ub=A_ineq, b_ub=b_ineq,
-                                            A_eq=A_eq, b_eq=b_eq)
+                                            A_eq=A_eq, b_eq=b_eq, options={'tol': 1e-8})
             if result['success']:
                 d_0 = result['x'][cnt_X_is_1:]
             else:
