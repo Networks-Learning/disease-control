@@ -11,68 +11,99 @@ from helpers import HelperFunc
 import maxcut
 
 
+class Monitor:
+
+    def __init__(self, verbose, use_tqdm):
+        self.verbose = verbose
+        self.use_tqdm = use_tqdm
+        self.time_elapsed = 0.0
+
+    def start(self, system):
+        if self.verbose:
+            if self.use_tqdm:
+                progress_bar = tqdm(total=system.max_time, leave=False)
+
+    def print(self, system, w):
+        if self.verbose:
+            if self.use_tqdm:
+                progress_bar.update(float(np.round(w, 2)))
+            else:
+                self.time_elapsed += w
+                N = np.array([self.N[i].value_at(self.time_elapsed) for i in range(self.n_nodes)])
+                print(f"\rtime {self.time_elapsed:>6.2f}/{system.max_time:<6.2f} | "
+                      f"S: {system.num_suc:>4d}, I:{system.num_inf:>4d}, "
+                      f"H: {system.num_treated:>4d}"
+                      f"N: {N.sum():>4d}"
+                      "           ", end='')
+
+    def stop(self, system):
+        if self.verbose:
+            if self.use_tqdm:
+                progress_bar.close()
+            else:
+                N = np.array([self.N[i].value_at(self.time_elapsed) for i in range(self.n_nodes)])
+                print(f"\rtime {self.time_elapsed:>6.2f}/{system.max_time:<6.2f} | "
+                      f"S: {system.num_suc:>4d}, I:{system.num_inf:>4d}, "
+                      f"H: {system.num_treated:>4d}"
+                      f"N: {N.sum():>4d}"
+                      "           ", end='\n')
+
+
 class SISDynamicalSystem:
     """
     Class that implements the simulation of the disease control dynamical
     system.
     """
 
-    def __init__(self, X_init, A, param, cost, verbose=True, notebook=False):
-        self.n_nodes = A.shape[0]  # Number of nodes
+    def __init__(self, graph, param, cost, min_d0=0.0, verbose=False, notebook=False, debug=False):
+        if param['gamma'] > param['beta']:
+            raise ValueError("`beta` must be larger than `gamma`!")
+        if min(list(param.values())) < 0:
+            raise ValueError("Epidemic parameters must be non-negative!")
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
         self.delta = param['delta']  # Recovery rate (spontaneous)
         self.rho = param['rho']  # Recovery rate from treatment
         self.eta = param['eta']  # Exponential discount rate for SOC strategy
+        
+        self.spectral_ranking = None  # LRSR
+        self.mcm_ranking = None  # MCM
 
-        # LRSR
-        self.spectral_ranking = None
+        self.debug_d0 = {'min': np.inf, 'max': -np.inf}
+        self.min_d0 = min_d0
 
-        # MCM
-        self.mcm_ranking = None
+        self.G = graph
+        self.n_nodes = graph.number_of_nodes()  # Number of nodes
 
-        # CURE
-        self.is_waiting = True
-        self.is_path_following_phase = False
-        self.G = nx.from_numpy_matrix(A, parallel_edges=False,
-                                      create_using=None)
+        self.debug = debug
+        self.monitor = Monitor(verbose=verbose, use_tqdm=not notebook)
+        
+        self.A = nx.adjacency_matrix(self.G).toarray().astype(float)
+        self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
+        self.Qx = cost['Qx'] * np.ones(self.n_nodes)
 
-        self.verbose = verbose
-        self.notebook = notebook
-
-        if (len(X_init) == self.n_nodes) and (A.shape[0] == A.shape[1]):
-            self.A = A
-            self.X_init = X_init
-            self.Z_init = np.dot(A.T, X_init)
-            self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
-            self.Qx = cost['Qx'] * np.ones(self.n_nodes)
-        else:
-            raise ValueError("Dimensions don't match")
-
-    def _simulate(self, policy_fun, time, plot, plot_update=1.0):
+    def _simulate(self, policy_fun, X_init, max_time):
         """
         Simulate the SIS dynamical system using Ogata's thinning algorithm over
         the time period policy_fun must be of shape: (1,) -> (N,)
         where t in [0, T] -> control vector for all N nodes.
         """
 
+        if X_init.shape != (self.n_nodes,):
+            raise ValueError("Invalid shape of `X_init`. Should be (`n_nodes`,)")
+        Z_init = self.A.T.dot(X_init)
+
         # Initialize the end time of the simulation
-        self.ttotal = time
+        self.max_time = max_time
 
         # Init the array of infection state processes
-        self.X = np.array(
-            [StochasticProcess(initial_condition=self.X_init[i])
-             for i in range(self.n_nodes)])
+        self.X = np.array([StochasticProcess(init_value=X_init[i]) for i in range(self.n_nodes)])
         # Init the array of neighbors infection state processes
-        self.Z = np.array(
-            [StochasticProcess(initial_condition=self.Z_init[i])
-             for i in range(self.n_nodes)])
+        self.Z = np.array([StochasticProcess(init_value=Z_init[i]) for i in range(self.n_nodes)])
         # Init the array of treatment state processes
-        self.H = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.n_nodes)])
+        self.H = np.array([StochasticProcess(init_value=0.0) for _ in range(self.n_nodes)])
         # Init the array of neighbors treatment state processes
-        self.M = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.n_nodes)])
+        self.M = np.array([StochasticProcess(init_value=0.0) for _ in range(self.n_nodes)])
         # Init the array of counting process of infections
         self.Y = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of counting process of recoveries
@@ -80,103 +111,36 @@ class SISDynamicalSystem:
         # Init the array of counting process of treatments
         self.N = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of process of treatment control rates
-        self.u = np.array([StochasticProcess(initial_condition=0.0)
-                           for _ in range(self.n_nodes)])
+        self.u = np.array([StochasticProcess(init_value=0.0)  for _ in range(self.n_nodes)])
 
         # Create infection events for initial infections
-        for i in range(len(self.X_init)):
-            if self.X_init[i] == 1.0:
-                self.Y[i].generate_arrival_at(0.0)
+        for i in np.where(X_init)[0]:
+            self.Y[i].generate_arrival_at(0.0)
 
         # Simulate path over time
         t = 0.0
         self.all_processes = CountingProcess()
         self.last_arrival_type = None
         
-        if self.verbose:
-            if self.notebook:
-                pass
-            else: 
-                progress_bar = tqdm(total=self.ttotal, leave=False)
+        self.monitor.start(self)
 
-        # Plotting functionality
-        if plot:
-            # Set up figure.
-            fig = plt.figure(figsize=(12, 8), facecolor='white')
-            ax = fig.add_subplot(111, frameon=False)
-            # plt.ion()
-            # plt.show(block=False)
-            self.already_plotted = set()
-
-            def callback(t, final=False):
-                new_plot = divmod(t, plot_update)[0]
-                if new_plot not in self.already_plotted or final:
-
-                    self.already_plotted.add(new_plot)
-
-                    plt.cla()
-
-                    # string creation
-                    s_beta = r'$\beta$: ' + str(self.beta) + ', '
-                    s_delta = r'$\delta$: ' + str(self.delta) + ', '
-                    s_rho = r'$\rho$: ' + str(self.rho) + ', '
-                    s_gamma = r'$\gamma$: ' + str(self.gamma) + ', '
-                    s_eta = r'$\eta$: ' + str(self.eta)
-                    s_Qlam = r'Q$_{\lambda}$: ' + \
-                        str(np.mean(self.Qlam)) + ', '
-                    s_Qx = 'Q$_{X}$: ' + str(np.mean(self.Qx))
-                    s = s_beta + s_gamma + '\n' \
-                        + s_delta + s_rho + s_eta + '\n' \
-                        + s_Qlam + s_Qx
-
-                    # plotting
-                    plt.text(0.0, self.n_nodes, s, size=12,
-                             va="baseline", ha="left", multialignment="left",
-                             bbox=dict(fc="none"))
-
-                    # helper functions
-                    hf = HelperFunc()
-
-                    tX, yX = hf.step_sps_values_over_time(self.X, summed=True)
-                    tH, yH = hf.step_sps_values_over_time(self.H, summed=True)
-
-                    print(tX, yX)
-                    ax.plot(tX, yX)
-                    ax.plot(tH, yH)
-
-                    ax.set_xlim([0, self.ttotal])
-                    ax.set_xlabel('Time')
-                    ax.set_ylim([0, self.n_nodes])
-                    ax.set_ylabel('Number of nodes')
-                    ax.legend(['Total infected |X|', 'Total under treatment |H|'])
-                    plt.draw()
-                    plt.pause(1e-10)
-
-        self.num_inf = int(self.X_init.sum())
+        self.num_inf = int(X_init.sum())
         self.num_suc = self.n_nodes - self.num_inf
         self.num_treated = 0
 
-        while t < self.ttotal:
+        while t < self.max_time:
 
             # Compute sum of intensities
             lambdaY, lambdaW, lambdaN = self._getPoissonIntensities(t, policy_fun)
             lambda_all = np.sum(lambdaY) + np.sum(lambdaW) + np.sum(lambdaN)
             if lambda_all == 0:
                 # infection went extinct
-                assert(not np.any([self.X[i].value_at(t)
-                                   for i in range(self.n_nodes)]))
+                X = [self.X[i].value_at(t) for i in range(self.n_nodes)]
+                assert not np.any(X)  # Sanity check that there are no infections
                 
-                if self.verbose:
-                    if self.notebook:
-                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
-                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
-                              f"H: {self.num_treated:>4d}"
-                              "           ", 
-                              end='')
-                    else:
-                        progress_bar.update(np.round(self.ttotal - t, 2))
+                self.monitor.stop(self)
                
-                t = self.ttotal
+                t = self.max_time
                 break
 
             # Generate next arrival of all processes Y[i], W[i], N[i]
@@ -184,16 +148,8 @@ class SISDynamicalSystem:
             w = - np.log(u) / lambda_all
             t = t + w
             self.all_processes.generate_arrival_at(t)
-            
-            if self.verbose:
-                if self.notebook:
-                        print(f"\rtime {t:>6.2f}/{self.ttotal:<6.2f} | "
-                              f"S: {self.num_suc:>4d}, I:{self.num_inf:>4d}, "
-                              f"H: {self.num_treated:>4d}"
-                              "           ", 
-                              end='')
-                else:
-                    progress_bar.update(float(np.round(w, 2)))
+
+            self.monitor.print(self, w)
 
             # Sample what process the arrival came from
             p = np.hstack((lambdaY, lambdaW, lambdaN)) / lambda_all
@@ -258,19 +214,7 @@ class SISDynamicalSystem:
                 for j in np.where(self.A[i])[0]:
                     self.M[j].generate_arrival_at(t, 1.0)
 
-            if plot:
-                callback(t)
-
-        if plot:
-            callback(t, final=True)
-            plt.ioff()
-            plt.show()
-
-        if self.verbose:
-            if self.notebook:
-                print()
-            else:
-                progress_bar.close()
+        self.monitor.stop(self)
 
         # return collected data for analysis
         return self._getCollectedData()
@@ -306,7 +250,7 @@ class SISDynamicalSystem:
         lambdaN = np.array([self.u[i].value_at(t) * self.X[i].value_at(t) * (1 - self.H[i].value_at(t)) for i in range(self.n_nodes)])
         return lambdaY, lambdaW, lambdaN
 
-    def simulate_policy(self, policy, baselines_dict, sim_dict, plot=False):
+    def simulate_policy(self, policy, X_init, max_time, baselines_dict):
         """
         Simulate any given policy.
 
@@ -327,35 +271,32 @@ class SISDynamicalSystem:
             Scaling parameters for baselines
         sim_dict : TYPE
             Epidemic parameters for simulation
-        plot : bool, optional (default: False)
-            Indicate whether or not to plot stuff
 
         Returns
         -------
         data : dict
             Collected data from the simulation
         """
-        total_time = sim_dict['total_time']
         if policy == 'SOC':
-            return self._simulate(self._getOptPolicy, total_time, plot)
+            return self._simulate(self._getOptPolicy, X_init, max_time)
         elif policy == 'TR':
-            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t), total_time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicy(baselines_dict['TR'], t),  X_init, max_time)
         elif policy == 'TR-FL':
-            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), total_time, plot)
+            return self._simulate(lambda t: self._getTrivialPolicyFrontLoaded(baselines_dict['TR'], baselines_dict['FL_info'], t), X_init, max_time)
         elif policy == 'MN':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), total_time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicPolicy(baselines_dict['MN'], t), X_init, max_time)
         elif policy == 'MN-FL':
-            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t), total_time, plot)
+            return self._simulate(lambda t: self._getMNDegreeHeuristicFrontLoaded(baselines_dict['MN'], baselines_dict['FL_info'], t),  X_init, max_time)
         elif policy == 'LN':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), total_time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicPolicy(baselines_dict['LN'], t), X_init, max_time)
         elif policy == 'LN-FL':
-            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), total_time, plot)
+            return self._simulate(lambda t: self._getLNDegreeHeuristicFrontLoaded(baselines_dict['LN'], baselines_dict['FL_info'], t), X_init, max_time)
         elif policy == 'LRSR':
-            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), total_time, plot)
+            return self._simulate(lambda t: self._getLRSRHeuristicPolicy(baselines_dict['LRSR'], t), X_init, max_time)
         elif policy == 'MCM':
-            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t), total_time, plot)
+            return self._simulate(lambda t: self._getMCMPolicy(baselines_dict['MCM'], t),  X_init, max_time)
         elif policy == 'NO':
-            return self._simulate(lambda t: self._getNoPolicy(), total_time, plot)
+            return self._simulate(lambda t: self._getNoPolicy(),  X_init, max_time)
         else:
             raise ValueError('Invalid policy name.')
 
@@ -372,7 +313,7 @@ class SISDynamicalSystem:
                 'rho': self.rho,
                 'gamma': self.gamma,
                 'eta': self.eta,
-                'ttotal': self.ttotal,
+                'max_time': self.max_time,
                 'Qlam': self.Qlam,
                 'Qx': self.Qx,
             },
@@ -422,7 +363,7 @@ class SISDynamicalSystem:
             # LP: find d_0 s.t. slack in inequality is minimized. See appendix
             # of writeup on how to formulate LP.
             obj = np.hstack((np.ones(cnt_X_is_1), np.zeros(cnt_X_is_0)))
-            epsilon = 0  # 1e-11 # to make sqrt definitely pos.; scipy.optimize.linprog tolerance is 1e-12
+            epsilon = 1e-8  # 1e-11 # to make sqrt definitely pos.; scipy.optimize.linprog tolerance is 1e-12
             epsilon_expr = epsilon / (2 * K1 * Qlam_1 * K3)
             A_ineq = np.hstack((np.zeros((cnt_X_is_1, cnt_X_is_1)), - A_10))
             b_ineq = K4 / K3 - epsilon_expr
@@ -430,9 +371,14 @@ class SISDynamicalSystem:
             b_eq = K4 / K3 - epsilon_expr
 
             result = scipy.optimize.linprog(obj, A_ub=A_ineq, b_ub=b_ineq,
-                                            A_eq=A_eq, b_eq=b_eq)
+                                            A_eq=A_eq, b_eq=b_eq,
+                                            bounds=(self.min_d0, None),
+                                            options={'tol': 1e-8})
             if result['success']:
                 d_0 = result['x'][cnt_X_is_1:]
+                if cnt_X_is_0 > 0:
+                    self.debug_d0['min'] = min(self.debug_d0['min'], d_0.min())
+                    self.debug_d0['max'] = max(self.debug_d0['max'], d_0.max())
             else:
                 raise Exception("LP couldn't be solved.")
 
@@ -462,10 +408,8 @@ class SISDynamicalSystem:
         # Array of X[i]'s and H[i]'s at time t
         X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
         H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
-        state = np.multiply(X, np.ones(self.n_nodes) - H)
-        return np.multiply(
-            const * np.ones(self.n_nodes),
-            np.multiply(state, self.Qx / self.Qlam))
+        state = X * (1 - H)
+        return  state * const
 
     def _getMNDegreeHeuristicPolicy(self, const, t):
         """
@@ -475,10 +419,9 @@ class SISDynamicalSystem:
         # Array of X[i]'s and H[i]'s at time t
         X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
         H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+        state = X * (1 - H)
         deg = np.dot(self.A.T, np.ones(self.n_nodes))
-        state = np.multiply(X, np.ones(self.n_nodes) - H)
-        return np.multiply(
-            const * deg, np.multiply(state, self.Qx / self.Qlam))
+        return deg * state * const
 
     def _getLNDegreeHeuristicPolicy(self, const, t):
         """
@@ -488,11 +431,10 @@ class SISDynamicalSystem:
         # Array of X[i]'s and H[i]'s at time t
         X = np.array([self.X[i].value_at(t) for i in range(self.n_nodes)])
         H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
-        deg = np.dot(self.A.T, np.ones(self.n_nodes))
-        state = np.multiply(X, np.ones(self.n_nodes) - H)
-        return np.multiply(
-            const * ((np.max(deg) + 1) * np.ones(self.n_nodes) - deg),
-            np.multiply(state, self.Qx / self.Qlam))
+        deg = self.A.T.dot(np.ones(self.n_nodes))
+        prop = np.max(deg) + 1 - deg
+        state = X * (1 - H)
+        return prop * state * const
 
     def _getLRSRHeuristicPolicy(self, const, t):
         """
@@ -618,39 +560,36 @@ class SIRDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, A, param, cost, verbose=True, debug=False, notebook=False):
-        self.n_nodes = A.shape[0]  # Number of nodes
+    def __init__(self, X_init, graph, param, cost, verbose=True, debug=False, notebook=False):
+        if self.gamma > self.beta:
+            raise ValueError("`beta` must be larger than `gamma`!")
+        if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
+            raise ValueError("Epidemic parameters must be non-negative!")
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
         self.delta = param['delta']  # Recovery rate (spontaneous)
         self.rho = param['rho']  # Recovery rate from treatment
         self.eta = param['eta']  # Exponential discount rate for SOC strategy
+        
+        self.spectral_ranking = None  # LRSR
+        self.mcm_ranking = None  # MCM
 
-        if self.gamma > self.beta:
-            raise ValueError("`beta` must be larger than `gamma`!")
-        if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
-            raise ValueError("Epidemic parameters must be non-negative!")
-
-        # LRSR
-        self.spectral_ranking = None
-
-        # MCM
-        self.mcm_ranking = None
-
-        self.G = nx.from_numpy_matrix(A, parallel_edges=False, create_using=nx.Graph)
+        self.G = graph
+        self.n_nodes = graph.number_of_nodes()  # Number of nodes
 
         self.verbose = verbose
         self.debug = debug
         self.notebook = notebook
 
-        if (len(X_init) == self.n_nodes and (A.shape[0] == A.shape[1])):
-            self.A = A
-            self.X_init = X_init
-            self.Z_init = np.dot(A.T, X_init)
-            self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
-            self.Qx = cost['Qx'] * np.ones(self.n_nodes)
-        else:
+        if len(X_init) != self.n_nodes:
             raise ValueError("Dimensions don't match")
+        
+        self.A = nx.adjacency_matrix(self.G)
+        self.X_init = X_init
+        self.Z_init = self.A.T.dot(X_init)
+        self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
+        self.Qx = cost['Qx'] * np.ones(self.n_nodes)
+            
 
     def _simulate(self, policy_fun, total_time, plot, plot_update=1.0):
         """
@@ -664,17 +603,17 @@ class SIRDynamicalSystem:
 
         # Init the array of infection state processes
         self.X = np.array(
-            [StochasticProcess(initial_condition=self.X_init[i])
+            [StochasticProcess(init_value=self.X_init[i])
              for i in range(self.n_nodes)])
         # Init the array of neighbors infection state processes
         self.Z = np.array(
-            [StochasticProcess(initial_condition=self.Z_init[i])
+            [StochasticProcess(init_value=self.Z_init[i])
              for i in range(self.n_nodes)])
         # Init the array of treatment state processes
-        self.H = np.array([StochasticProcess(initial_condition=0.0)
+        self.H = np.array([StochasticProcess(init_value=0.0)
                            for _ in range(self.n_nodes)])
         # Init the array of neighbors treatment state processes
-        self.M = np.array([StochasticProcess(initial_condition=0.0)
+        self.M = np.array([StochasticProcess(init_value=0.0)
                            for _ in range(self.n_nodes)])
         # Init the array of counting process of infections
         self.Y = np.array([CountingProcess() for _ in range(self.n_nodes)])
@@ -683,7 +622,7 @@ class SIRDynamicalSystem:
         # Init the array of counting process of treatments
         self.N = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of process of treatment control rates
-        self.u = np.array([StochasticProcess(initial_condition=0.0)
+        self.u = np.array([StochasticProcess(init_value=0.0)
                            for _ in range(self.n_nodes)])
 
         # Create infection events for initial infections
@@ -807,7 +746,8 @@ class SIRDynamicalSystem:
                 self.X[i].generate_arrival_at(t, 1.0)
 
                 # dZ = A(dY - dW)
-                for j in np.where(self.A[i])[0]:
+                neighbor_indices = self.A[i].nonzero()[1]
+                for j in neighbor_indices:
                     self.Z[j].generate_arrival_at(t, 1.0)
 
             elif self.n_nodes <= k < 2 * self.n_nodes:  # arrival W (recovery)
@@ -825,17 +765,18 @@ class SIRDynamicalSystem:
                 # dX = dY - dW
                 self.X[i].generate_arrival_at(t, -1.0)
 
+                neighbor_indices = self.A[i].nonzero()[1]
+                
                 # dZ = A(dY - dW)
-                for j in np.where(self.A[i])[0]:
+                for j in neighbor_indices:
                     self.Z[j].generate_arrival_at(t, -1.0)
 
-                
                 prev_H = self.H[i].value_at(t)
                 if prev_H == 1:
                     # dH = dN - H.dW
                     self.H[i].generate_arrival_at(t, -1.0)
                     # dM = A(dN - H.dW)
-                    for j in np.where(self.A[i])[0]:
+                    for j in neighbor_indices:
                         self.M[j].generate_arrival_at(t, -1.0)
                     self.num_treated -= 1
 
@@ -853,8 +794,10 @@ class SIRDynamicalSystem:
                 # dH = dN - H.dW
                 self.H[i].generate_arrival_at(t, 1.0)
 
+                neighbor_indices = self.A[i].nonzero()[1]
+
                 # dM = A(dN - H.dW)
-                for j in np.where(self.A[i])[0]:
+                for j in neighbor_indices:
                     self.M[j].generate_arrival_at(t, 1.0)
 
             if plot:

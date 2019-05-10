@@ -15,10 +15,10 @@ class StochasticProcess:
         List of values taken by the process at each arrival
     """
 
-    def __init__(self, initial_condition=0.0):
+    def __init__(self, init_value=0.0):
         self.last_arrival = -1.0
         self.arrival_times = []
-        self.values = [initial_condition]
+        self.values = [init_value]
 
     def get_last_arrival_time(self):
         """
@@ -62,7 +62,7 @@ class CountingProcess(StochasticProcess):
     """
 
     def __init__(self):
-        super().__init__(initial_condition=0.0)
+        super().__init__(init_value=0.0)
 
     def generate_arrival_at(self, t):
         """
@@ -74,7 +74,7 @@ class CountingProcess(StochasticProcess):
 if __name__ == '__main__':
     """Do some basic unit testing."""
 
-    s = StochasticProcess(initial_condition=0.0)
+    s = StochasticProcess(init_value=0.0)
 
     s.generate_arrival_at(1.0, 1.0)
     s.generate_arrival_at(5.0, 1.0)
