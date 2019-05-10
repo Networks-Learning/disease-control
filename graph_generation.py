@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 
-from settings import EBOLA_BASE_GRAPH_FILE
+from settings import EBOLA_BASE_GRAPH_FILE, EBOLA_SCALED_GRAPH_FILE
 
 
 def make_ebola_network(n_nodes, p_in, p_out):
@@ -48,4 +48,11 @@ def make_ebola_network(n_nodes, p_in, p_out):
     assert num_unique_block_district == len(cluster_names)
     # Extract the giant component
     graph = max(nx.connected_component_subgraphs(graph), key=len)
+    return graph
+
+
+def load_ebola_network():
+    with open(EBOLA_SCALED_GRAPH_FILE, 'r') as f:
+        graph_data = json.load(f)
+        graph = nx.readwrite.json_graph.node_link_graph(graph_data)
     return graph
