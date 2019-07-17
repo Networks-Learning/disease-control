@@ -560,7 +560,7 @@ class SIRDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, graph, param, cost, verbose=True, debug=False, notebook=False):
+    def __init__(self, X_init, graph, param, cost, min_d0=0.0, verbose=True, debug=False, notebook=False):
         if self.gamma > self.beta:
             raise ValueError("`beta` must be larger than `gamma`!")
         if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
@@ -573,6 +573,8 @@ class SIRDynamicalSystem:
         
         self.spectral_ranking = None  # LRSR
         self.mcm_ranking = None  # MCM
+
+        self.min_d0 = min_d0
 
         self.G = graph
         self.n_nodes = graph.number_of_nodes()  # Number of nodes
@@ -971,7 +973,9 @@ class SIRDynamicalSystem:
             b_eq = K4 / K3 - epsilon_expr
 
             result = scipy.optimize.linprog(obj, A_ub=A_ineq, b_ub=b_ineq,
-                                            A_eq=A_eq, b_eq=b_eq, options={'tol': 1e-8})
+                                            bounds=(self.min_d0, None),
+                                            A_eq=A_eq, b_eq=b_eq, 
+                                            options={'tol': 1e-8})
             if result['success']:
                 d_0 = result['x'][cnt_X_is_1:]
             else:
