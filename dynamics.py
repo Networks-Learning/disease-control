@@ -560,11 +560,8 @@ class SIRDynamicalSystem:
     system.
     """
 
-    def __init__(self, X_init, graph, param, cost, min_d0=0.0, verbose=True, debug=False, notebook=False):
-        if self.gamma > self.beta:
-            raise ValueError("`beta` must be larger than `gamma`!")
-        if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
-            raise ValueError("Epidemic parameters must be non-negative!")
+    def __init__(self, X_init, A, param, cost, min_d0=0.0, verbose=True, debug=False, notebook=False):
+        
         self.beta = param['beta']  # Infection rate
         self.gamma = param['gamma']  # Reduc.in infection rate from treatment
         self.delta = param['delta']  # Recovery rate (spontaneous)
@@ -576,8 +573,13 @@ class SIRDynamicalSystem:
 
         self.min_d0 = min_d0
 
-        self.G = graph
-        self.n_nodes = graph.number_of_nodes()  # Number of nodes
+        if self.gamma > self.beta:
+            raise ValueError("`beta` must be larger than `gamma`!")
+        if min(self.beta, self.gamma, self.delta, self.rho, self.eta) < 0:
+            raise ValueError("Epidemic parameters must be non-negative!")
+
+        self.n_nodes = A.shape[0] # Number of nodes
+        assert A.shape[0] == A.shape[1]
 
         self.verbose = verbose
         self.debug = debug
@@ -586,7 +588,7 @@ class SIRDynamicalSystem:
         if len(X_init) != self.n_nodes:
             raise ValueError("Dimensions don't match")
         
-        self.A = nx.adjacency_matrix(self.G)
+        self.A = A
         self.X_init = X_init
         self.Z_init = self.A.T.dot(X_init)
         self.Qlam = cost['Qlam'] * np.ones(self.n_nodes)
@@ -617,6 +619,7 @@ class SIRDynamicalSystem:
         # Init the array of neighbors treatment state processes
         self.M = np.array([StochasticProcess(init_value=0.0)
                            for _ in range(self.n_nodes)])
+
         # Init the array of counting process of infections
         self.Y = np.array([CountingProcess() for _ in range(self.n_nodes)])
         # Init the array of counting process of recoveries
@@ -665,9 +668,11 @@ class SIRDynamicalSystem:
                 Y = np.array([self.Y[i].value_at(t) for i in range(self.n_nodes)])
                 W = np.array([self.W[i].value_at(t) for i in range(self.n_nodes)])
                 H = np.array([self.H[i].value_at(t) for i in range(self.n_nodes)])
+                R = np.array([self.R[i].value_at(t) for i in range(self.n_nodes)])
                 assert Y.max() <= 1, "Y should have values at most 1!"
-                assert W.max() <= 1, "Y should have values at most 1!"
-                assert H.max() <= 1, "Y should have values at most 1!"
+                assert W.max() <= 1, "W should have values at most 1!"
+                assert H.max() <= 1, "H should have values at most 1!"
+                assert R.max() <= 1, "R should have values at most 1!"
                 Y = Y.astype(bool)
                 W = W.astype(bool)
                 H = H.astype(bool)
@@ -748,7 +753,7 @@ class SIRDynamicalSystem:
                 self.X[i].generate_arrival_at(t, 1.0)
 
                 # dZ = A(dY - dW)
-                neighbor_indices = self.A[i].nonzero()[1]
+                neighbor_indices = self.A[i].nonzero()[0]
                 for j in neighbor_indices:
                     self.Z[j].generate_arrival_at(t, 1.0)
 
@@ -767,7 +772,8 @@ class SIRDynamicalSystem:
                 # dX = dY - dW
                 self.X[i].generate_arrival_at(t, -1.0)
 
-                neighbor_indices = self.A[i].nonzero()[1]
+
+                neighbor_indices = self.A[i].nonzero()[0]
                 
                 # dZ = A(dY - dW)
                 for j in neighbor_indices:
@@ -796,7 +802,7 @@ class SIRDynamicalSystem:
                 # dH = dN - H.dW
                 self.H[i].generate_arrival_at(t, 1.0)
 
-                neighbor_indices = self.A[i].nonzero()[1]
+                neighbor_indices = self.A[i].nonzero()[0]
 
                 # dM = A(dN - H.dW)
                 for j in neighbor_indices:
