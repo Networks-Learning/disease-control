@@ -46,17 +46,9 @@ def make_ebola_network(n_nodes, p_in, p_out):
     # Sanity check for name assignment of each cluster
     num_unique_block_district = len(set([(node_data['block'], node_data['district']) for u, node_data in graph.nodes(data=True)]))
     assert num_unique_block_district == len(cluster_names)
-    
-    # Remove isolated nodes
-    isolated = list(nx.isolates(graph))
-    graph.remove_nodes_from(isolated)
 
-    # # Rename
-    # mapping = nx.convert_node_labels_to_integers(graph)
-    # graph = nx.relabel_nodes(graph, mapping)
-
-    # # Extract the giant component
-    # graph = max(nx.connected_component_subgraphs(graph), key=len)
+    # Extract the giant component
+    graph = max(nx.connected_component_subgraphs(graph), key=len)
     return graph
 
 
