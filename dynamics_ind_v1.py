@@ -231,16 +231,21 @@ class SimulationSIR(object):
         # Infection tracking
         self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time infection of u occurred
         self.is_inf = np.zeros(self.n_nodes, dtype='bool')                       # True if u infected
+        self.sched_inf_time = np.inf * \
+            np.ones((self.n_nodes, self.n_nodes), dtype='float')                 # planned infection time over edge u,v
+        self.inf_valid = np.zeros((self.n_nodes, self.n_nodes), dtype='bool')    # True if infection over u,v is valid
         self.infector = np.nan * np.ones(self.n_nodes, dtype='int')              # node that infected u
         self.num_child_inf = np.zeros(self.n_nodes, dtype='int')                 # number of neighbors u infected
         
         # Recovery tracking
         self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time recovery of u occured
         self.is_rec = np.zeros(self.n_nodes, dtype='bool')                       # True if u recovered
+        self.sched_rec_time = np.inf * np.ones(self.n_nodes, dtype='float')      # planned recovery time of u
         
         # Treatment tracking
         self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time treatment of u occured
         self.is_tre = np.zeros(self.n_nodes, dtype='bool')                       # True if u treated
+        self.sched_tre_time = np.inf * np.ones(self.n_nodes, dtype='float')      # planned treatment time of u
 
         # Conrol tracking
         self.old_lambdas = np.zeros(self.n_nodes, dtype='float')                 # control intensity of prev iter
@@ -253,9 +258,12 @@ class SimulationSIR(object):
 
             if event_type == 'inf':
                 # Initial infections have infections from u to u
+                self.sched_inf_time[u_idx, u_idx] = time
+                self.inf_valid[u_idx, u_idx] = True
                 self.queue.push(event, priority=time)
 
             elif event_type == 'rec':
+                self.sched_rec_time[u_idx] = time
                 self.queue.push(event, priority=time)
             else:
                 raise ValueError('Invalid Event Type for initial seeds.')
@@ -278,11 +286,13 @@ class SimulationSIR(object):
             self.infector[u_idx] = w
             self.num_child_inf[w_idx] += 1
             recovery_time_u = time + self.expo(self.delta)
+            self.sched_rec_time[u_idx] = recovery_time_u
             self.queue.push((u, 'rec', None), priority=recovery_time_u)
 
         else:
             # Handle initial seeds
             self.infector[u_idx] = np.nan
+            recovery_time_u = self.sched_rec_time[u_idx]
 
         # Set neighbors infection events
         for v in self.G.neighbors(u):
@@ -290,7 +300,9 @@ class SimulationSIR(object):
             if self.is_sus[v_idx]:
                 infection_time_v = time + self.expo(self.beta)
                 self.queue.push((v, 'inf', u), priority=infection_time_v)
-
+                self.sched_inf_time[u_idx, v_idx] = infection_time_v
+                self.inf_valid[u_idx, v_idx] = (
+                    infection_time_v < recovery_time_u)
                             
     def _process_recovery_event(self, u, time):
         """
@@ -319,6 +331,7 @@ class SimulationSIR(object):
             # re-sample 
             new_recovery_time_u = time + self.expo(self.delta + self.rho)
             self.queue.push((u, 'rec', None), priority=new_recovery_time_u)
+            self.sched_rec_time[u_idx] = new_recovery_time_u
 
         # Update neighbors infection events triggered by u 
         for v in self.G.neighbors(u):
@@ -332,8 +345,12 @@ class SimulationSIR(object):
                     # re-sample
                     new_infection_time_v = time + self.expo(self.beta - self.gamma)
                     self.queue.push((v, 'inf', u), priority=new_infection_time_v)
+                    self.sched_inf_time[u_idx, v_idx] = new_infection_time_v
 
-    
+                # check validity of infection from u to v with new times
+                self.inf_valid[u_idx, v_idx] = (
+                    self.sched_inf_time[u_idx, v_idx] < self.sched_rec_time[u_idx])
+
     def _control(self, u, time, policy='NO'):
 
         u_idx = self.node_to_idx[u]
@@ -352,11 +369,13 @@ class SimulationSIR(object):
                 # re-sample
                 new_treatment_time_u = time + self.expo(self.new_lambda)
                 self.queue.push((u, 'tre', None), priority=new_treatment_time_u)
+                self.sched_tre_time[u_idx] = new_treatment_time_u
 
         elif delta > 0:
             # Sample new/additional treatment event with the superposition principle
             new_treatment_time_u = time + self.expo(delta)
             self.queue.push((u, 'tre', None), priority=new_treatment_time_u)
+            self.sched_tre_time[u_idx] = new_treatment_time_u
 
     def _compute_lambda(self, u, time, policy='NO'):
         'Computes control intensity of the respective policy'
@@ -407,7 +426,7 @@ class SimulationSIR(object):
             if (event_type == 'inf') and (not self.is_inf[u_idx]):
                 # Check validity of infection event
                 w_idx = self.node_to_idx[w]
-                if self.initial_seed[u_idx] or (not self.is_rec[w_idx]):
+                if self.initial_seed[u_idx] or (self.inf_valid[w_idx, u_idx]):
                     self._process_infection_event(u, time, w)
             elif (event_type == 'rec') and (not self.is_rec[u_idx]):
                 self._process_recovery_event(u, time)
