@@ -12,6 +12,7 @@ import networkx as nx
 import numpy as np
 import scipy as sp
 import math
+import time
 
 
 def _spectral_sequencing(adjacency_mat):
@@ -39,7 +40,14 @@ def _swap_heuristic(adjacency_mat, plist, seed, n_swaps):
         np.random.seed(seed)
     # Initialize the current sum of cuts
     curr_sum_cuts = sum(cut_list(G, plist))
+    last_print = time.time()
     for i in range(n_swaps):
+         # printing
+        if (time.time() - last_print > 0.1):
+            last_print = time.time()
+            done = 100 * i / n_swaps
+            print('\r', f'Computing MCM heuristic... {done:.2f}%',
+                    sep='', end='', flush=True)
         # Sample two nodes ramdomly
         x, y = np.random.randint(0, n_nodes, size=2)
         # Swap their order
