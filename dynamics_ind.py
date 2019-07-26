@@ -622,6 +622,11 @@ class SimulationSIR(object):
              -K4 / K3 * np.ones(len_I) - 1e-8]
         )
 
+        # new
+        C_ineq = sp.sparse.vstack([A_ineq, A_eq])
+        C_ineq_dense = C_ineq.toarray()
+        d_ineq = np.hstack([b_ineq, -b_ineq])
+
         bounds = tuple([(0.0, None)] * len_I + [(None, None)] * len_S)
 
         self.stored_matrices = (c, C_ineq, d_ineq)
