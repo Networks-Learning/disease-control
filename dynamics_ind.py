@@ -1,23 +1,83 @@
 """
-epidemic_helper.py: Helper module to simulate continuous-time stochastic 
+epidemic_helper.py: Helper module to simulate continuous-time stochastic
 SIR epidemics.
 Copyright © 2018 — LCA 4
 """
 import time
 import bisect
 import numpy as np
+import pandas as pd
 import networkx as nx
-import scipy 
+import scipy
 import scipy as sp
-from numpy import random as rd
+import random as rd
 import heapq
-import collections, itertools
-import maxcut
+import collections
+import itertools
+
 from lpsolvers import solve_lp
+
+import maxcut
+
+
+def sample_seeds(n_seeds=None, max_date=None, verbose=True):
+    """
+    Extract seeds from the Ebola cases datasets, by choosing either:
+    * the first `n_seeds`. 
+    * the first seed until the date `max_date`.
+    We then simulate the recovery rate of the seed, and start
+    the epidemics at the infection time of the last seed.
+    Note that some seeds may have already recovered at this time. In 
+    this case, they are just ignored from the simulation.
+    """
+    assert (n_seeds is None) or (max_date is None)
+    
+    # Load real data
+    df = pd.read_csv('../data/ebola/rstb20160308_si_001_cleaned.csv')
+    if n_seeds:
+        df = df.sort_values('infection_timestamp').iloc[:n_seeds]
+    elif max_date:
+        df = df[df.infection_date < max_date].sort_values('infection_timestamp')
+        
+    # Extract the seed disctricts
+    seed_names = list(df['district'])
+    
+    # Extract district name for each node in the graph
+    node_names = np.array([u for u, d in graph.nodes(data=True)])
+    node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])
+    
+    # Get last infection time of seeds (this is time zero for the simulation)
+    last_inf_time = df.infection_timestamp.max()
+    
+    # Init list of seed events
+    init_event_list = list()
+    for _, row in df.iterrows():
+        
+        inf_time = row['infection_timestamp']
+        
+        # Sample recovery time
+        rec_time = inf_time + rd.expovariate(delta) - last_inf_time
+        
+        # Ignore seed if recovered before time zero
+        if rec_time > 0:
+            
+            # Randomly sample one node for each seed in the corresponding district
+            idx = np.random.choice(np.where(node_districts == row['district'])[0])
+            node = node_names[idx]
+            
+            # Add infection event
+            # node to node infection flags initial seeds in code
+            init_event_list.append([(node, 'inf', node), 0.0])  # Gets infection at the start
+            
+            # Add recovery event
+            init_event_list.append([(node, 'rec', None), rec_time])
+            
+            if verbose:
+                print(f'Add seed {node} from district {row["district"]} - inf: {0.0}, rec: {rec_time} ')
+    return init_event_list
 
 
 class PriorityQueue(object):
-
     """
     PriorityQueue with O(1) update and deletion of objects
     """
@@ -34,7 +94,7 @@ class PriorityQueue(object):
             self.push(initial[i], priority=priorities[i])
 
     def push(self, task, priority=0):
-        'Add a new task or update the priority of an existing task'
+        """Add a new task or update the priority of an existing task"""
         if task in self.entry_finder:
             self.delete(task)
         count = next(self.counter)
@@ -43,12 +103,12 @@ class PriorityQueue(object):
         heapq.heappush(self.pq, entry)
 
     def delete(self, task):
-        'Mark an existing task as REMOVED.  Raise KeyError if not found.'
+        """Mark an existing task as REMOVED.  Raise KeyError if not found."""
         entry = self.entry_finder.pop(task)
         entry[-1] = self.REMOVED
 
     def remove_all_tasks_of_type(self, type):
-        'Removes all existing tasks of a specific type (for SIRSimulation)'
+        """Removes all existing tasks of a specific type (for SIRSimulation)"""
         keys = list(self.entry_finder.keys())
         for event in keys:
             u, type_, v = event
@@ -56,8 +116,10 @@ class PriorityQueue(object):
                 self.delete(event)
 
     def pop_priority(self):
-        'Remove and return the lowest priority task with its priority value.'
-        'Raise KeyError if empty.'
+        """
+        Remove and return the lowest priority task with its priority value.
+        Raise KeyError if empty.
+        """
         while self.pq:
             priority, _, task = heapq.heappop(self.pq)
             if task is not self.REMOVED:
@@ -66,12 +128,14 @@ class PriorityQueue(object):
         raise KeyError('pop from an empty priority queue')
 
     def pop(self):
-        'Remove and return the lowest priority task. Raise KeyError if empty.'
+        """
+        Remove and return the lowest priority task. Raise KeyError if empty.
+        """
         task, _ = self.pop_priority()
         return task
 
     def priority(self, task):
-        'Return priority of task'
+        """Return priority of task"""
         if task in self.entry_finder:
             return self.entry_finder[task][0]
         else:
@@ -95,16 +159,21 @@ class ProgressPrinter(object):
     Helper object to print relevant information throughout the epidemic
     """
     PRINT_INTERVAL = 0.1
-    _PRINT_MSG = ('{t:.2f} days elapsed | '
+    _PRINT_MSG = ('{t:.2f} days elapsed '
+                  '| '
                   '{S:.0f} sus., '
                   '{I:.0f} inf., '
-                  '{R:.0f} rec. | '
-                  '{Tt:.0f} treated ({TI:.2f}% of infected) | I(q): {iq} R(q): {rq}')
-    _PRINTLN_MSG = ('Epidemic stopped after {t:.2f} days | '
+                  '{R:.0f} rec., '
+                  '{Tt:.0f} tre ({TI:.2f}% of inf) | '
+                  ' | '
+                  'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}')
+    _PRINTLN_MSG = ('Epidemic stopped after {t:.2f} days '
+                    '| '
                     '{S:.0f} sus., '
                     '{I:.0f} inf., '
-                    '{R:.0f} rec. | '
-                    '{Tt:.0f} treated ({TI:.2f}% of infected)')
+                    '{R:.0f} rec., '
+                    '{Tt:.0f} tre ({TI:.2f}% of inf) | '
+                    'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}')
 
     def __init__(self, verbose=True):
         self.verbose = verbose
@@ -114,32 +183,42 @@ class ProgressPrinter(object):
         if not self.verbose:
             return
         if (time.time() - self.last_print > self.PRINT_INTERVAL) or force:
-            S = np.sum(sir_obj.is_sus) 
-            I = np.sum(sir_obj.is_inf) 
-            T = np.sum(sir_obj.is_tre) 
+            S = np.sum(sir_obj.is_sus)
+            I = np.sum(sir_obj.is_inf * (1 - sir_obj.is_rec))
             R = np.sum(sir_obj.is_rec)
-            Tt = np.sum(sir_obj.is_tre)
-            TI = 100. * T / I
+            T = np.sum(sir_obj.is_tre)
             
+            Tt = np.sum(sir_obj.is_tre)
+            TI = 100. * T / I if I > 0 else np.nan
 
             iq = sir_obj.infs_in_queue
             rq = sir_obj.recs_in_queue
-           
-            print('\r', self._PRINT_MSG.format(
-                t=epitime, S=S, I=I, T=T, Tt=Tt, R=R, TI=TI, iq=iq, rq=rq), #q=len(sir_obj.queue.pq), ef=len(sir_obj.queue.entry_finder)),
-                sep='', end='', flush=True)
+            tq = sir_obj.tres_in_queue
+            lq = len(sir_obj.queue)
+
+            print('\r', self._PRINT_MSG.format(t=epitime, S=S, I=I, R=R, Tt=Tt, TI=TI,
+                                               iq=iq, rq=rq, tq=tq, lq=lq),
+                  sep='', end='', flush=True)
             self.last_print = time.time()
 
     def println(self, sir_obj, epitime):
         if not self.verbose:
             return
-        S = np.sum(sir_obj.is_sus) #* 100. / sir_obj.n_nodes
-        I = np.sum(sir_obj.is_inf) #* 100. / sir_obj.n_nodes
-        T = np.sum(sir_obj.is_tre) #* 100. / sir_obj.n_nodes
-        Tt = np.sum(sir_obj.is_tre) 
-        TI = 100. * T / I
-        R = np.sum(sir_obj.is_rec) * 100. / sir_obj.n_nodes
-        print('\r', self._PRINTLN_MSG.format(t=epitime, S=S, I=I, T=T, Tt=Tt, R=R, TI=TI),
+        S = np.sum(sir_obj.is_sus)
+        I = np.sum(sir_obj.is_inf * (1 - sir_obj.is_rec))
+        R = np.sum(sir_obj.is_rec)
+        T = np.sum(sir_obj.is_tre)
+        
+        Tt = np.sum(sir_obj.is_tre)
+        TI = 100. * T / I if I > 0 else np.nan
+        
+        iq = sir_obj.infs_in_queue
+        rq = sir_obj.recs_in_queue
+        tq = sir_obj.tres_in_queue
+        lq = len(sir_obj.queue)
+
+        print('\r', self._PRINTLN_MSG.format(
+              t=epitime, S=S, I=I, R=R, Tt=Tt, TI=TI, iq=iq, rq=rq, tq=tq, lq=lq),
               sep='', end='\n', flush=True)
         self.last_print = time.time()
 
@@ -149,7 +228,7 @@ class SimulationSIR(object):
     Simulate continuous-time SIR epidemic with exponentially distributed
     infection and recovery rates.
 
-    Invariant of an event in the queue is 
+    Invariant of an event in the queue is
         (node, event_str, infector node)
 
     Attributes:
@@ -160,14 +239,13 @@ class SimulationSIR(object):
     beta : float
         Exponential infection rate (non-negative)
     gamma : float
-        Reduction in infection rate by treatment 
+        Reduction in infection rate by treatment
     delta : float
         Exponential recovery rate (non-negative)
     rho : float
         Increase in recovery rate by treatment
 
     """
-    
 
     def __init__(self, G, param_dict, verbose=True):
         """
@@ -188,7 +266,7 @@ class SimulationSIR(object):
         if not isinstance(G, nx.Graph):
             raise ValueError('Invalid graph type, must be networkx.Graph')
         self.G = G
-        self.A = sp.sparse.csr_matrix(nx.adjacency_matrix(self.G).toarray())
+        self.A = sp.sparse.csr_matrix(nx.adjacency_matrix(self.G))
 
         # Cache the number of nodes
         self.n_nodes = len(G.nodes())
@@ -222,15 +300,14 @@ class SimulationSIR(object):
         self.lrsr_initiated = False   # flag for initial LRSR computation
         self.mcm_initiated = False    # flag for initial MCM computation
 
-        self.stored_matrices = None 
+        self.stored_matrices = None
 
-    
         # Printer for logging
         self._printer = ProgressPrinter(verbose=verbose)
 
     def expo(self, rate):
-        'Samples a single exponential random variable.'
-        return rd.exponential(scale=1.0/rate)
+        """Samples a single exponential random variable."""
+        return rd.expovariate(rate)
 
     def nodes_at_time(self, status, time):
         """
@@ -252,36 +329,38 @@ class SimulationSIR(object):
         Initialize the run of the epidemic
         """
 
+        # Cache the number of ins, recs, tres in the queue
         self.infs_in_queue = 0
         self.recs_in_queue = 0
+        self.tres_in_queue = 0
 
-
+        # Max time of the run
         self.max_time = max_time
 
-        # Priority queue of events by time 
+        # Priority queue of events by time
         # event invariant is ('node', event, 'node') where the second node is the infector if applicable
         self.queue = PriorityQueue()
-    
+
         # Node status (0: Susceptible, 1: Infected, 2: Recovered)
         self.initial_seed = np.zeros(self.n_nodes, dtype='bool')
-        self.is_sus = np.ones(self.n_nodes, dtype='bool')                        # True if u susceptible
+        self.is_sus = np.ones(self.n_nodes, dtype='bool')                    # True if u susceptible
 
         # Infection tracking
-        self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time infection of u occurred
-        self.is_inf = np.zeros(self.n_nodes, dtype='bool')                       # True if u infected
-        self.infector = np.nan * np.ones(self.n_nodes, dtype='int')              # node that infected u
-        self.num_child_inf = np.zeros(self.n_nodes, dtype='int')                 # number of neighbors u infected
-        
+        self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time infection of u occurred
+        self.is_inf = np.zeros(self.n_nodes, dtype='bool')                   # True if u infected
+        self.infector = np.nan * np.ones(self.n_nodes, dtype='int')          # node that infected u
+        self.num_child_inf = np.zeros(self.n_nodes, dtype='int')             # number of neighbors u infected
+
         # Recovery tracking
-        self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time recovery of u occured
-        self.is_rec = np.zeros(self.n_nodes, dtype='bool')                       # True if u recovered
-        
+        self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time recovery of u occured
+        self.is_rec = np.zeros(self.n_nodes, dtype='bool')                   # True if u recovered
+
         # Treatment tracking
-        self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')      # time treatment of u occured
-        self.is_tre = np.zeros(self.n_nodes, dtype='bool')                       # True if u treated
+        self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time treatment of u occured
+        self.is_tre = np.zeros(self.n_nodes, dtype='bool')                   # True if u treated
 
         # Conrol tracking
-        self.old_lambdas = np.zeros(self.n_nodes, dtype='float')                 # control intensity of prev iter
+        self.old_lambdas = np.zeros(self.n_nodes, dtype='float')             # control intensity of prev iter
         self.max_interventions_reached = False
 
         # Add the initial events to priority queue
@@ -289,41 +368,37 @@ class SimulationSIR(object):
             u, event_type, _ = event
             u_idx = self.node_to_idx[u]
             self.initial_seed[u_idx] = True
-
             if event_type == 'inf':
-                # Initial infections have infections from u to u
+                # Initial infections have infections from NaN to u
                 self.queue.push(event, priority=time)
-
+                self.infs_in_queue += 1
             elif event_type == 'rec':
                 self.queue.push(event, priority=time)
+                self.recs_in_queue += 1
             else:
                 raise ValueError('Invalid Event Type for initial seeds.')
-        
+
     def _process_infection_event(self, u, time, w):
         """
         Mark node `u` as infected at time `time`
         Sample its recovery time and its neighbors infection times and add to the queue
         """
+        # Get node index
         u_idx = self.node_to_idx[u]
-
-        # Handle infection
+        # Handle infection event
         self.is_inf[u_idx] = True
         self.is_sus[u_idx] = False
         self.inf_occured_at[u_idx] = time
-        self.infs_in_queue -= 1
-
-        if not self.initial_seed[u_idx]:
+        if self.initial_seed[u_idx]:
+            # Handle initial seeds
+            self.infector[u_idx] = np.nan
+        else:
             w_idx = self.node_to_idx[w]
             self.infector[u_idx] = w
             self.num_child_inf[w_idx] += 1
             recovery_time_u = time + self.expo(self.delta)
             self.queue.push((u, 'rec', None), priority=recovery_time_u)
             self.recs_in_queue += 1
-
-        else:
-            # Handle initial seeds
-            self.infector[u_idx] = np.nan
-
         # Set neighbors infection events
         for v in self.G.neighbors(u):
             v_idx = self.node_to_idx[v]
@@ -331,91 +406,82 @@ class SimulationSIR(object):
                 infection_time_v = time + self.expo(self.beta)
                 self.queue.push((v, 'inf', u), priority=infection_time_v)
                 self.infs_in_queue += 1
-           
+
     def _process_recovery_event(self, u, time):
         """
         Mark node `node` as recovered at time `time`
         """
+        # Get node index
         u_idx = self.node_to_idx[u]
+        # Handle recovery event
         self.rec_occured_at[u_idx] = time
         self.is_rec[u_idx] = True
-        self.recs_in_queue -= 1
 
     def _process_treatment_event(self, u, time):
         """
         Mark node `u` as treated at time `time`
         Update its recovery time and its neighbors infection times and the queue
         """
+        # Get node index
         u_idx = self.node_to_idx[u]
-
+        # Handle treatement event
         self.tre_occured_at[u_idx] = time
         self.is_tre[u_idx] = True
-
         # Update own recovery event with rejection sampling
         assert(self.rho <= 0)
         if np.random.uniform() < - self.rho / self.delta:
             # reject previous event
             self.queue.delete((u, 'rec', None))
-
-            # re-sample 
+            # re-sample
             new_recovery_time_u = time + self.expo(self.delta + self.rho)
             self.queue.push((u, 'rec', None), priority=new_recovery_time_u)
-
-        # Update neighbors infection events triggered by u 
+        # Update neighbors infection events triggered by u
         for v in self.G.neighbors(u):
             v_idx = self.node_to_idx[v]
-            if self.is_sus[v_idx]:  
+            if self.is_sus[v_idx]:
                 if np.random.uniform() < self.gamma / self.beta:
-
                     # reject previous event
                     self.queue.delete((v, 'inf', u))
-
                     # re-sample
                     new_infection_time_v = time + self.expo(self.beta - self.gamma)
                     self.queue.push((v, 'inf', u), priority=new_infection_time_v)
 
     def _control(self, u, time, policy='NO'):
-
+        # Get node index
         u_idx = self.node_to_idx[u]
-
         # Check if max interventions were reached (for FL)
         if '-FL' in policy:
             max_interventions = self.policy_dict['front-loading']['max_interventions']
             current_interventions = np.sum(self.is_tre)
             if current_interventions > max_interventions:
-
                 # End interventions for this simulation
                 self.max_interventions_reached = True
                 self.queue.remove_all_tasks_of_type('tre')
                 print('All treatments ended')
                 return
-
         # Compute control intensity
         self.new_lambda = self._compute_lambda(u, time, policy=policy)
-
         # Sample treatment event
         delta = self.new_lambda - self.old_lambdas[u_idx]
         if delta < 0:
             # Update treatment event with rejection sampling as intensity was reduced
-            if np.random.uniform() < 1 - self.new_lambda / self.old_lambdas[u_idx]:
+            if rd.random() < 1 - self.new_lambda / self.old_lambdas[u_idx]:
                 # reject previous event
                 self.queue.delete((u, 'tre', None))
-
                 if self.new_lambda > 0:
                     # re-sample
                     new_treatment_time_u = time + self.expo(self.new_lambda)
                     self.queue.push((u, 'tre', None), priority=new_treatment_time_u)
-
         elif delta > 0:
             # Sample new/additional treatment event with the superposition principle
             new_treatment_time_u = time + self.expo(delta)
             self.queue.push((u, 'tre', None), priority=new_treatment_time_u)
-
+            self.tres_in_queue += 1
         # store lambda
-        self.old_lambdas[u_idx] = self.new_lambda 
+        self.old_lambdas[u_idx] = self.new_lambda
 
     def _compute_lambda(self, u, time, policy='NO'):
-        'Computes control intensity of the respective policy'
+        """Computes control intensity of the respective policy"""
 
         if policy == 'NO':
             return 0.0
@@ -494,7 +560,6 @@ class SimulationSIR(object):
         # TODO
         # raise ValueError('Currently too slow for big networks. Eigenvalues of A need to be found |V| times using brute force.')
 
-
         # lambda ~ 1/rank
         # where rank is order of largest reduction in spectral radius of A
         if self.lrsr_initiated:
@@ -505,8 +570,7 @@ class SimulationSIR(object):
             return intensity, max_intensity
         else:
             # first time: compute ranking for all nodes
-
-            def spectral_radius(A): # TODO not tested yet
+            def spectral_radius(A):  # TODO not tested yet
                 return np.max(scipy.linalg.eigvalsh(self.A, turbo=True, eigvals=(self.n_nodes - 2, self.n_nodes - 1)))
 
             # Brute force:
@@ -522,13 +586,11 @@ class SimulationSIR(object):
                 reduction_by_node[n] = tau - spectral_radius(A_)
 
                 # printing
-                print(100 * n / self.n_nodes)
                 if (time.time() - last_print > 0.1):
                     last_print = time.time()
-                    done = 100 * n  /self.n_nodes
-
+                    done = 100 * n / self.n_nodes
                     print('\r', f'Computing LRSR ranking... {done:.2f}%',
-                        sep='', end='', flush=True)
+                          sep='', end='', flush=True)
 
             order = np.argsort(reduction_by_node)
             self.spectral_ranking_idx = np.flip(order)
@@ -573,7 +635,7 @@ class SimulationSIR(object):
             
             # return both u's intensity and max intensity of all nodes for potential FL
             return intensity, max_intensity
-            
+
     def _compute_SOC_lambda(self, u, time):
         'Stochastic optimal control policy'
         
@@ -618,7 +680,7 @@ class SimulationSIR(object):
         A = sp.sparse.vstack([A_ineq, A_eq])
 
         b = np.hstack(
-            [K4 / K3 * np.ones(len_I) - 1e-8, 
+            [K4 / K3 * np.ones(len_I) - 1e-8,
              -K4 / K3 * np.ones(len_I) - 1e-8]
         )
 
@@ -630,7 +692,6 @@ class SimulationSIR(object):
         bounds = tuple([(0.0, None)] * len_I + [(None, None)] * len_S)
 
         self.stored_matrices = (c, C_ineq, d_ineq)
-
 
         if self.LPSOLVER == 'scipy':
 
@@ -659,8 +720,7 @@ class SimulationSIR(object):
         
     def launch_epidemic(self, init_event_list, max_time=np.inf, policy='NO', policy_dict={}):
         """
-        Run the epidemic, starting from initial event list, for at most `max_time` 
-        units of time
+        Run the epidemic, starting from initial event list, for at most `max_time` units of time
         """
 
         self._init_run(init_event_list, max_time)
@@ -671,44 +731,54 @@ class SimulationSIR(object):
         while self.queue:
             # Get the next event to process
             (u, event_type, w), time = self.queue.pop_priority()
-
+            
+            # Update queue cache
+            if event_type == 'inf':
+                self.infs_in_queue -= 1
+            elif event_type == 'rec':
+                self.recs_in_queue -= 1
+            elif event_type == 'tre':
+                self.tres_in_queue -= 1
+            
+            # Get node index
             u_idx = self.node_to_idx[u]
-
-            # print(np.sum(self.nodes_at_time('I', time)),
-            #       np.sum(self.nodes_at_time('T', time)))
-
-            # Stop at then end of the observation window
+            
+            # Stop at the end of the observation window
             if time > self.max_time:
                 time = self.max_time
                 break
-
+            
             # Process the event
+            # Check validity of infection event (node u is not infected yet)
             if (event_type == 'inf') and (not self.is_inf[u_idx]):
-                # Check validity of infection event
+                assert self.is_sus[u_idx], f"Node `{u}` should be susceptible to be infected"
                 w_idx = self.node_to_idx[w]
                 if self.initial_seed[u_idx] or (not self.is_rec[w_idx]):
                     self._process_infection_event(u, time, w)
+            # Check validity of recovery event (node u is not recovered yet)
             elif (event_type == 'rec') and (not self.is_rec[u_idx]):
+                assert self.is_inf[u_idx], f"Node `{u}` should be infected to be recovered"
                 self._process_recovery_event(u, time)
+            # Check validity of treatement event (node u is not treated yet, and not recovered)
             elif (event_type == 'tre') and (not self.is_tre[u_idx]) and (not self.is_rec[u_idx]):
+                assert self.is_inf[u_idx], f"Node `{u}` should be infected to be treated"
                 self._process_treatment_event(u, time)
+
+            # If no-one is infected, the epidemic is finished. Stop the simulation.
+            if np.sum(self.is_inf * (1 - self.is_rec)) == 0:
+                break
 
             # Update Control for nodes still untreated and infected
             if not self.max_interventions_reached:
                 controlled_nodes = np.where(self.is_inf * (1 - self.is_tre) * (1 - self.is_rec))[0]
-
                 if self.policy == 'SOC':
                     self._update_LP_sol()
-
                 for u_idx in controlled_nodes:
                     self._control(self.idx_to_node[u_idx], time, policy=self.policy)
 
-            # print
             self._printer.print(self, time)
 
         self._printer.println(self, time)
 
         # Free memory
         del self.queue
-
-
