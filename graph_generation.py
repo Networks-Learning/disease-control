@@ -8,7 +8,7 @@ import networkx as nx
 from settings import EBOLA_BASE_GRAPH_FILE, EBOLA_SCALED_GRAPH_FILE
 
 
-def make_ebola_network(n_nodes, p_in, p_out):
+def make_ebola_network(n_nodes, p_in, p_out, seed=None):
     """
     Build the EBOLA network with `n_nodes` based on the network of connected
     districts. Each district is mapped into a cluster of size proportional to
@@ -39,7 +39,7 @@ def make_ebola_network(n_nodes, p_in, p_out):
     base_adj[base_adj == 1] = p_out
     base_adj[np.eye(len(base_graph.nodes()), dtype=bool)] = p_in
     # Generate stoch block model graph
-    graph = nx.generators.stochastic_block_model(cluster_sizes, base_adj)
+    graph = nx.generators.stochastic_block_model(cluster_sizes, base_adj, seed)
     # Assign district attribute to each node
     for u, district in zip(graph.nodes(), node_names):
         graph.node[u]['district'] = district
