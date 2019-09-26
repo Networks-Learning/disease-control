@@ -20,17 +20,30 @@ from lpsolvers import solve_lp
 import maxcut
 
 
-def sample_seeds(n_seeds=None, max_date=None, verbose=True):
+def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
     """
     Extract seeds from the Ebola cases datasets, by choosing either:
-    * the first `n_seeds`. 
-    * the first seed until the date `max_date`.
-    We then simulate the recovery rate of the seed, and start
-    the epidemics at the infection time of the last seed.
-    Note that some seeds may have already recovered at this time. In 
-    this case, they are just ignored from the simulation.
+        * the first `n_seeds`.
+        * the first seed until the date `max_date`.
+    For each seed, we then simulate its recovery time and attribute it to a random node in the
+    corresponding district. We then start the epidemic at the time of infection of the last seed.
+    Note that some seeds may have already recovered at this time. In this case, they are just
+    ignored from the simulation altogether.
+
+    Arguments:
+    ---------
+    graph : nx.Graph
+        The graph of individuals in districts. Nodes must have the attribute `district`.
+    delta : float
+        Recovery rate of the epidemic process. Used to sample recovery times of seeds.
+    n_seeds : int
+        Number of seeds to sample.
+    max_date : str
+        Maximum date to sample seeds.
+    verbose : bool
+        Indicate whether or not to print seed generation process.
     """
-    assert (n_seeds is None) or (max_date is None)
+    assert (n_seeds is None) or (max_date is None), "Either `n_seeds` or `max_date` must be given"
     
     # Load real data
     df = pd.read_csv('../data/ebola/rstb20160308_si_001_cleaned.csv')
@@ -41,37 +54,27 @@ def sample_seeds(n_seeds=None, max_date=None, verbose=True):
         
     # Extract the seed disctricts
     seed_names = list(df['district'])
-    
     # Extract district name for each node in the graph
     node_names = np.array([u for u, d in graph.nodes(data=True)])
     node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])
-    
     # Get last infection time of seeds (this is time zero for the simulation)
     last_inf_time = df.infection_timestamp.max()
-    
     # Init list of seed events
     init_event_list = list()
     for _, row in df.iterrows():
-        
         inf_time = row['infection_timestamp']
-        
         # Sample recovery time
         rec_time = inf_time + rd.expovariate(delta) - last_inf_time
-        
         # Ignore seed if recovered before time zero
         if rec_time > 0:
-            
             # Randomly sample one node for each seed in the corresponding district
             idx = np.random.choice(np.where(node_districts == row['district'])[0])
             node = node_names[idx]
-            
             # Add infection event
             # node to node infection flags initial seeds in code
             init_event_list.append([(node, 'inf', node), 0.0])  # Gets infection at the start
-            
             # Add recovery event
             init_event_list.append([(node, 'rec', None), rec_time])
-            
             if verbose:
                 print(f'Add seed {node} from district {row["district"]} - inf: {0.0}, rec: {rec_time} ')
     return init_event_list
@@ -86,7 +89,7 @@ class PriorityQueue(object):
 
         self.pq = []
         self.entry_finder = {}               # mapping of tasks to entries
-        self.REMOVED = '<removed-task>'      # placeholder for a removed task
+        self.removed = '<removed-task>'      # placeholder for a removed task
         self.counter = itertools.count()     # unique sequence count
 
         assert(len(initial) == len(priorities))
@@ -105,7 +108,7 @@ class PriorityQueue(object):
     def delete(self, task):
         """Mark an existing task as REMOVED.  Raise KeyError if not found."""
         entry = self.entry_finder.pop(task)
-        entry[-1] = self.REMOVED
+        entry[-1] = self.removed
 
     def remove_all_tasks_of_type(self, type):
         """Removes all existing tasks of a specific type (for SIRSimulation)"""
@@ -122,7 +125,7 @@ class PriorityQueue(object):
         """
         while self.pq:
             priority, _, task = heapq.heappop(self.pq)
-            if task is not self.REMOVED:
+            if task is not self.removed:
                 del self.entry_finder[task]
                 return task, priority
         raise KeyError('pop from an empty priority queue')
@@ -225,48 +228,50 @@ class ProgressPrinter(object):
 
 class SimulationSIR(object):
     """
-    Simulate continuous-time SIR epidemic with exponentially distributed
-    infection and recovery rates.
+    Simulate continuous-time SIR epidemics with treatement, with exponentially distributed
+    inter-event times.
 
-    Invariant of an event in the queue is
-        (node, event_str, infector node)
-
-    Attributes:
-    ----------
-    G : networkx.Graph
-        Propagation network
-
-    beta : float
-        Exponential infection rate (non-negative)
-    gamma : float
-        Reduction in infection rate by treatment
-    delta : float
-        Exponential recovery rate (non-negative)
-    rho : float
-        Increase in recovery rate by treatment
-
+    The simulation algorithm works by leveraging the Markov property of the model and rejection
+    sampling. Events are treated in order in a priority queue. An event in the queue is a tuple
+    the form
+        `(node, event_type, infector_node)`
+    where elements are as follows:
+    `node` : is the node where the event occurs,
+    `event_type` : is the type of event (i.e. infected 'inf', recovery 'rec', or treatement 'tre')
+    `infector_node` : for infections only, the node of caused the infection.
     """
 
-    def __init__(self, G, param_dict, verbose=True):
+    AVAILABLE_LPSOLVERS = ['scipy', 'cvxopt']
+
+    def __init__(self, G, beta, gamma, delta, rho, eta=1.0, q_x=None, q_lam=None, lpsolver='cvxopt', verbose=True):
         """
         Init an SIR cascade over a graph
+        
         Arguments:
         ---------
         G : networkx.Graph()
                 Graph over which the epidemic propagates
-        param_dict : dict
-            Dict with all epidemic parameters
+        beta : float
+            Exponential infection rate (positive)
+        gamma : float
+            Reduction in infection rate by treatment
+        delta : float
+            Exponential recovery rate (non-negative)
+        rho : float
+            Increase in recovery rate by treatment
+        eta : float (optional, default: 1.0)
+            SOC policy exponential decay
+        q_x : float (optional if SOC policy is not used)
+            SOC infection cost
+        q_lam : float (optional if SOC policy is not used)
+            SOC treatement cost
         verbose : bool (default: True)
-            Indicate the print behavior, if set to False, nothing will be
-            printed
+            Indicate the print behavior, if set to False, nothing will be printed
         """
-        
-        self.LPSOLVER = ['scipy', 'cvxopt'][1]
-
         if not isinstance(G, nx.Graph):
             raise ValueError('Invalid graph type, must be networkx.Graph')
         self.G = G
-        self.A = sp.sparse.csr_matrix(nx.adjacency_matrix(self.G))
+        self.A = sp.sparse.csr_matrix(nx.adjacency_matrix(self.G).toarray())
 
         # Cache the number of nodes
         self.n_nodes = len(G.nodes())
@@ -276,31 +281,35 @@ class SimulationSIR(object):
         self.node_to_idx = dict(zip(self.G.nodes(), range(self.n_nodes)))
 
         # Check parameters
-        self.beta = param_dict['beta']
-        self.gamma = param_dict['gamma']
-        self.delta = param_dict['delta']
-        self.rho = param_dict['rho']
-        self.eta = param_dict['eta']
-        self.q_x = param_dict['q_x']
-        self.q_lam = param_dict['q_lam']
+        if isinstance(beta, (float, int)) and (beta > 0):
+            self.beta = beta
+        else:
+            raise ValueError("`beta` must be a positive float")
+        if isinstance(gamma, (float, int)) and (gamma >= 0) and (gamma <= beta):
+            self.gamma = gamma
+        else:
+            raise ValueError(("`gamma` must be a positive float smaller than `beta`"))
+        if isinstance(delta, (float, int)) and (delta >= 0):
+            self.delta = delta
+        else:
+            raise ValueError("`delta` must be a non-negative float")
+        if isinstance(rho, (float, int)) and (rho >= 0):
+            self.rho = rho
+        else:
+            raise ValueError("`rho` must be a non-negative float")
 
-        if self.beta < 0:
-            raise ValueError('Invalid `beta` (must be non-negative)')
-        if self.gamma < 0 or self.gamma > self.beta:
-            raise ValueError(
-                'Invalid `gamma` (must be non-negative) and smaller than `beta`')
-        if self.delta < 0:
-            raise ValueError('Invalid `delta` (must be non-negative)')
-        if self.rho > 0 or self.rho + self.delta < 0:
-            raise ValueError(
-                'For the Ebola application and this code '
-                '`rho` (must be non-positive) and `delta + rho` must be non-negative')
+        # SOC control parameters
+        self.eta = eta
+        self.q_x = q_x
+        self.q_lam = q_lam
+        if lpsolver in self.AVAILABLE_LPSOLVERS:
+            self.lpsolver = lpsolver
+        else:
+            raise ValueError("Invalid `lpsolver`")
 
         # Control pre-computations
         self.lrsr_initiated = False   # flag for initial LRSR computation
         self.mcm_initiated = False    # flag for initial MCM computation
-
-        self.stored_matrices = None
 
         # Printer for logging
         self._printer = ProgressPrinter(verbose=verbose)
@@ -329,33 +338,33 @@ class SimulationSIR(object):
         Initialize the run of the epidemic
         """
 
-        # Cache the number of ins, recs, tres in the queue
-        self.infs_in_queue = 0
-        self.recs_in_queue = 0
-        self.tres_in_queue = 0
-
         # Max time of the run
         self.max_time = max_time
 
         # Priority queue of events by time
         # event invariant is ('node', event, 'node') where the second node is the infector if applicable
         self.queue = PriorityQueue()
+        # Cache the number of ins, recs, tres in the queue
+        self.infs_in_queue = 0
+        self.recs_in_queue = 0
+        self.tres_in_queue = 0
 
-        # Node status (0: Susceptible, 1: Infected, 2: Recovered)
+        # Susceptible nodes tracking: is_sus[node]=1 if node is currently susceptible)
         self.initial_seed = np.zeros(self.n_nodes, dtype='bool')
         self.is_sus = np.ones(self.n_nodes, dtype='bool')                    # True if u susceptible
 
-        # Infection tracking
+        # Infection tracking: is_inf[node]=1 if node has been infected
+        # (note that the node can be already recovered)
         self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time infection of u occurred
         self.is_inf = np.zeros(self.n_nodes, dtype='bool')                   # True if u infected
         self.infector = np.nan * np.ones(self.n_nodes, dtype='int')          # node that infected u
         self.num_child_inf = np.zeros(self.n_nodes, dtype='int')             # number of neighbors u infected
 
-        # Recovery tracking
+        # Recovery tracking: is_rec[node]=1 if node is currently recovered
         self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time recovery of u occured
         self.is_rec = np.zeros(self.n_nodes, dtype='bool')                   # True if u recovered
 
-        # Treatment tracking
+        # Treatment tracking: is_tre[node]=1 if node is currently treated
         self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time treatment of u occured
         self.is_tre = np.zeros(self.n_nodes, dtype='bool')                   # True if u treated
 
@@ -429,7 +438,7 @@ class SimulationSIR(object):
         self.is_tre[u_idx] = True
         # Update own recovery event with rejection sampling
         assert(self.rho <= 0)
-        if np.random.uniform() < - self.rho / self.delta:
+        if rd.random() < - self.rho / self.delta:
             # reject previous event
             self.queue.delete((u, 'rec', None))
             # re-sample
@@ -439,7 +448,7 @@ class SimulationSIR(object):
         for v in self.G.neighbors(u):
             v_idx = self.node_to_idx[v]
             if self.is_sus[v_idx]:
-                if np.random.uniform() < self.gamma / self.beta:
+                if rd.random() < self.gamma / self.beta:
                     # reject previous event
                     self.queue.delete((v, 'inf', u))
                     # re-sample
@@ -637,13 +646,17 @@ class SimulationSIR(object):
             return intensity, max_intensity
 
     def _compute_SOC_lambda(self, u, time):
-        'Stochastic optimal control policy'
+        """
+        Compute the stochastic optimal control rate for node `u` at time `time`
+        """
         
+        # Set the variable `d`, where elements corresponding to susceptible individuals come from
+        # the pre-computed linear program, and the others are zero.
         d = np.zeros(self.n_nodes)
         d[self.lp_d_S_idx] = self.lp_d_S
 
         K1 = self.beta * (2 * self.delta + self.eta + self.rho)
-        K2 = self.beta * (self.delta + self.eta) * (self.delta + self.eta + self.rho) * self.q_lam       
+        K2 = self.beta * (self.delta + self.eta) * (self.delta + self.eta + self.rho) * self.q_lam
         K3 = self.eta * (self.gamma * (self.delta + self.eta) + self.beta * (self.delta + self.rho))
         K4 = self.beta * (self.delta + self.rho) * self.q_x
 
@@ -651,15 +664,23 @@ class SimulationSIR(object):
         intensity = - 1.0 / (K1 * self.q_lam) * (K2 - np.sqrt(2.0 * K1 * self.q_lam * (K3 * cache + K4) + K2 ** 2.0))
 
         if intensity < 0.0:
-            raise ValueError('Control intensity has to be non-negative.')
+            raise ValueError("Control intensity has to be non-negative.")
 
         return intensity
 
     def _update_LP_sol(self):
+        """
+        Update the solution `d_S` of the linear program for the SOC policy. The solution is then
+        cached in attribute `lp_d_S` along with the corresponding indices `lp_d_S_idx` of
+        susceptible individuals.
+
+        Note: To speed up convergence of the linear program optimization, we use the Epigraph
+        trick and transform the equality contraint into an inequality.
+        """
         
         # find subarrays
-        x_S = np.where(self.is_sus)[0]
-        x_I = np.where(self.is_inf)[0]
+        x_S = np.where(self.is_sus)[0]  # Indices of susceptible individuals
+        x_I = np.where(self.is_inf)[0]  # Indices of infected/recovered individuals
         len_S = x_S.shape[0]
         len_I = x_I.shape[0]
         A_IS = self.A[np.ix_(x_I, x_S)]
@@ -671,29 +692,27 @@ class SimulationSIR(object):
         c = np.hstack((np.ones(len_I), np.zeros(len_S)))
 
         # inequality: Ax <= b
-        A_ineq = sp.sparse.hstack(
-            [sp.sparse.csr_matrix((len_I, len_I)),  - A_IS])
+        A_ineq = sp.sparse.hstack([
+            sp.sparse.csr_matrix((len_I, len_I)),
+            - A_IS
+        ])
 
-        A_eq = sp.sparse.hstack(
-            [- sp.sparse.eye(len_I),  A_IS])
+        # equality: Ax = b
+        A_eq = sp.sparse.hstack([
+            - sp.sparse.eye(len_I),
+            A_IS
+        ])
 
         A = sp.sparse.vstack([A_ineq, A_eq])
 
-        b = np.hstack(
-            [K4 / K3 * np.ones(len_I) - 1e-8,
-             -K4 / K3 * np.ones(len_I) - 1e-8]
-        )
-
-        # new
-        C_ineq = sp.sparse.vstack([A_ineq, A_eq])
-        C_ineq_dense = C_ineq.toarray()
-        d_ineq = np.hstack([b_ineq, -b_ineq])
+        b = np.hstack([
+            K4 / K3 * np.ones(len_I) - 1e-8,  # b_ineq
+            -K4 / K3 * np.ones(len_I) + 1e-8  # b_eq
+        ])
 
         bounds = tuple([(0.0, None)] * len_I + [(None, None)] * len_S)
 
-        self.stored_matrices = (c, C_ineq, d_ineq)
-
-        if self.LPSOLVER == 'scipy':
+        if self.lpsolver == 'scipy':
 
             result = scipy.optimize.linprog(
                 c, A_ub=A, b_ub=b,
@@ -705,7 +724,7 @@ class SimulationSIR(object):
             else:
                 raise Exception("LP couldn't be solved.")
 
-        elif self.LPSOLVER == 'cvxopt':
+        elif self.lpsolver == 'cvxopt':
 
             A_dense = A.toarray()
             res = solve_lp(c, A_dense, b, None, None)
@@ -768,9 +787,9 @@ class SimulationSIR(object):
             if np.sum(self.is_inf * (1 - self.is_rec)) == 0:
                 break
 
-            # Update Control for nodes still untreated and infected
+            # Update Control for infected nodes still untreated
             if not self.max_interventions_reached:
-                controlled_nodes = np.where(self.is_inf * (1 - self.is_tre) * (1 - self.is_rec))[0]
+                controlled_nodes = np.where(self.is_inf * (1 - self.is_rec) * (1 - self.is_tre))[0]
                 if self.policy == 'SOC':
                     self._update_LP_sol()
                 for u_idx in controlled_nodes:
