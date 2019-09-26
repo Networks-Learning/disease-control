@@ -14,10 +14,12 @@ import random as rd
 import heapq
 import collections
 import itertools
+import os
 
 from lpsolvers import solve_lp
 
-import maxcut
+from . import maxcut
+from .settings import DATA_DIR
 
 
 def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
@@ -46,7 +48,7 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
     assert (n_seeds is None) or (max_date is None), "Either `n_seeds` or `max_date` must be given"
     
     # Load real data
-    df = pd.read_csv('../data/ebola/rstb20160308_si_001_cleaned.csv')
+    df = pd.read_csv(os.path.join(DATA_DIR, 'ebola', 'rstb20160308_si_001_cleaned.csv'))
     if n_seeds:
         df = df.sort_values('infection_timestamp').iloc[:n_seeds]
     elif max_date:
@@ -54,6 +56,7 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
         
     # Extract the seed disctricts
     seed_names = list(df['district'])
+    print(graph.nodes(data=True)[0])
     # Extract district name for each node in the graph
     node_names = np.array([u for u, d in graph.nodes(data=True)])
     node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])

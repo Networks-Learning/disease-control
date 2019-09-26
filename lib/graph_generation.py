@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 
-from settings import EBOLA_BASE_GRAPH_FILE, EBOLA_SCALED_GRAPH_FILE
+from .settings import EBOLA_BASE_GRAPH_FILE, EBOLA_SCALED_GRAPH_FILE
 
 
 def make_ebola_network(n_nodes, p_in, p_out, seed=None):
