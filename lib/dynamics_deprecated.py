@@ -6,9 +6,9 @@ from tqdm import tqdm, tqdm_notebook
 import scipy.optimize
 import networkx as nx
 
-from stochastic_processes import StochasticProcess, CountingProcess
-from helpers import HelperFunc
-import maxcut
+from .stochastic_processes import StochasticProcess, CountingProcess
+from .helpers import HelperFunc
+from . import maxcut
 
 
 class Monitor:
