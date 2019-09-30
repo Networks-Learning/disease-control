@@ -46,17 +46,14 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
         Indicate whether or not to print seed generation process.
     """
     assert (n_seeds is None) or (max_date is None), "Either `n_seeds` or `max_date` must be given"
-    
     # Load real data
     df = pd.read_csv(os.path.join(DATA_DIR, 'ebola', 'rstb20160308_si_001_cleaned.csv'))
     if n_seeds:
         df = df.sort_values('infection_timestamp').iloc[:n_seeds]
     elif max_date:
         df = df[df.infection_date < max_date].sort_values('infection_timestamp')
-        
     # Extract the seed disctricts
     seed_names = list(df['district'])
-    print(graph.nodes(data=True)[0])
     # Extract district name for each node in the graph
     node_names = np.array([u for u, d in graph.nodes(data=True)])
     node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])
@@ -455,7 +452,13 @@ class SimulationSIR(object):
                     # reject previous event
                     self.queue.delete((v, 'inf', u))
                     # re-sample
-                    new_infection_time_v = time + self.expo(self.beta - self.gamma)
+                    if self.beta - self.gamma > 0:
+                        new_infection_time_v = time + self.expo(self.beta - self.gamma)
+                    else:
+                        # Avoid DivisionByZeroError if beta = gamma
+                        # i.e., if no infectivity under treatement, then set infection time to inf
+                        # We still set an event to make the algo easier and avoid bugs
+                        new_infection_time_v = np.inf
                     self.queue.push((v, 'inf', u), priority=new_infection_time_v)
 
     def _control(self, u, time, policy='NO'):
