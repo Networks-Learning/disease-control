@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 import scipy
+import scipy.optimize
 import scipy as sp
 import random as rd
 import heapq
@@ -168,7 +169,6 @@ class ProgressPrinter(object):
                   '{I:.0f} inf., '
                   '{R:.0f} rec., '
                   '{Tt:.0f} tre ({TI:.2f}% of inf) | '
-                  ' | '
                   'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}')
     _PRINTLN_MSG = ('Epidemic stopped after {t:.2f} days '
                     '| '
@@ -243,7 +243,7 @@ class SimulationSIR(object):
 
     AVAILABLE_LPSOLVERS = ['scipy', 'cvxopt']
 
-    def __init__(self, G, beta, gamma, delta, rho, eta=1.0, q_x=None, q_lam=None, lpsolver='cvxopt', verbose=True):
+    def __init__(self, G, beta, gamma, delta, rho, verbose=True):
         """
         Init an SIR cascade over a graph
         
@@ -259,12 +259,6 @@ class SimulationSIR(object):
             Exponential recovery rate (non-negative)
         rho : float
             Increase in recovery rate by treatment
-        eta : float (optional, default: 1.0)
-            SOC policy exponential decay
-        q_x : float (optional if SOC policy is not used)
-            SOC infection cost
-        q_lam : float (optional if SOC policy is not used)
-            SOC treatement cost
         verbose : bool (default: True)
             Indicate the print behavior, if set to False, nothing will be printed
         """
@@ -297,15 +291,6 @@ class SimulationSIR(object):
             self.rho = rho
         else:
             raise ValueError("`rho` must be a non-negative float")
-
-        # SOC control parameters
-        self.eta = eta
-        self.q_x = q_x
-        self.q_lam = q_lam
-        if lpsolver in self.AVAILABLE_LPSOLVERS:
-            self.lpsolver = lpsolver
-        else:
-            raise ValueError("Invalid `lpsolver`")
 
         # Control pre-computations
         self.lrsr_initiated = False   # flag for initial LRSR computation
@@ -723,6 +708,7 @@ class SimulationSIR(object):
             result = scipy.optimize.linprog(
                 c, A_ub=A, b_ub=b,
                 bounds=bounds,
+                method="interior-point",
                 options={'tol': 1e-8})
 
             if result['success']:
@@ -751,6 +737,18 @@ class SimulationSIR(object):
         self._init_run(init_event_list, max_time)
         self.policy = policy
         self.policy_dict = policy_dict
+        
+        # Set SOC control parameters
+        # TODO: Handle policy parameters better
+        if policy == 'SOC':
+            self.eta = policy_dict['eta']
+            self.q_x = policy_dict['q_x']
+            self.q_lam = policy_dict['q_lam']
+            if policy_dict['lpsolver'] in self.AVAILABLE_LPSOLVERS:
+                self.lpsolver = policy_dict['lpsolver']
+            else:
+                raise ValueError("Invalid `lpsolver`")
+
         time = 0.0
 
         while self.queue:
