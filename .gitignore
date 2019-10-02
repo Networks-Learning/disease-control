@@ -1,5 +1,6 @@
-# Ignore data folder
+# Ignore custom folders
 # data/
+output/
 
 temp_pickles/
 plots/
