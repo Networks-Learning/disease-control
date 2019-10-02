@@ -42,7 +42,7 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
     n_seeds : int
         Number of seeds to sample.
     max_date : str
-        Maximum date to sample seeds.
+        Maximum date to sample seeds (max_date is included in sampling).
     verbose : bool
         Indicate whether or not to print seed generation process.
     """
@@ -52,7 +52,7 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
     if n_seeds:
         df = df.sort_values('infection_timestamp').iloc[:n_seeds]
     elif max_date:
-        df = df[df.infection_date < max_date].sort_values('infection_timestamp')
+        df = df[df.infection_date <= max_date].sort_values('infection_timestamp')
     # Extract the seed disctricts
     seed_names = list(df['district'])
     # Extract district name for each node in the graph
