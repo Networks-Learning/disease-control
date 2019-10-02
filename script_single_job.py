@@ -13,7 +13,7 @@ from lib.dynamics import sample_seeds
 from lib.settings import DATA_DIR
 
 
-def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None):
+def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verbose=False):
     """
     Run a single SIR simulation based on the parameters in `param_filename` inside directory
     `exp_dir` and output a summary into `output_filename`.
@@ -60,7 +60,6 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None):
         sys.stdout = open(stdout, 'w')
     if stderr is not None:
         sys.stderr = open(stderr, 'w')
-
 
     # Load parameters from file
     param_filename_full = os.path.join(exp_dir, param_filename)
@@ -110,7 +109,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None):
     print('\nSimulation parameters')
     print(f'  - start day: {start_day_str}')
     print(f'  -   end day: {start_day_str}')
-    print(f'  - number of days to simulate: {max_time})')
+    print(f'  - number of days to simulate: {max_time}')
     
     print('\nEpidemic parameters')
     for key, val in param_dict['simulation']['sir_params'].items():
@@ -132,12 +131,12 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None):
 
     # Sample initial infected seeds at time t=0
     delta = param_dict['simulation']['sir_params']['delta']
-    init_event_list = sample_seeds(graph, delta=delta, max_date=start_day_str, verbose=False)
+    init_event_list = sample_seeds(graph, delta=delta, max_date=start_day_str, verbose=verbose)
 
     print('\nRun simulation...')
     
     # Run SIR simulation
-    sir_obj = SimulationSIR(graph, **param_dict['simulation']['sir_params'], verbose=False)
+    sir_obj = SimulationSIR(graph, **param_dict['simulation']['sir_params'], verbose=verbose)
     sir_obj.launch_epidemic(init_event_list=init_event_list, max_time=max_time,
                             policy=param_dict['simulation']['policy_name'],
                             policy_dict=param_dict['simulation']['policy_params'])
@@ -158,6 +157,11 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None):
     output_dict['inf_occured_at'] = sir_obj.inf_occured_at.tolist()
     output_dict['rec_occured_at'] = sir_obj.rec_occured_at.tolist()
     output_dict['infector'] = sir_obj.infector.tolist()
+
+    country_list = np.zeros(sir_obj.n_nodes, dtype=object)
+    for u, d in sir_obj.G.nodes(data=T):
+        country_list[sir_obj.node_to_idx[u]] = d['country']
+    output_dict['country'] = country_list
 
     node_district_arr = np.zeros(sir_obj.n_nodes, dtype='object')
     for node, data in sir_obj.G.nodes(data=True):
@@ -184,6 +188,10 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--outfile', dest='output_filename', type=str,
                         required=False, default='output.json',
                         help="Output file (JSON)")
+    parser.add_argument('-v', '--verbose', dest='verbose', action="store_true",
+                        required=False, default=False,
+                        help="Print behavior")
     args = parser.parse_args()
 
-    run(exp_dir=args.dir, param_filename=args.param_filename, output_filename=args.output_filename)
+    run(exp_dir=args.dir, param_filename=args.param_filename, output_filename=args.output_filename,
+        verbose=args.verbose)
