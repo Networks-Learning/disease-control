@@ -72,7 +72,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     print('=====================')
     print(f'        exp_dir = {exp_dir:s}')
     print(f' param_filename = {param_filename:s}')
-    print(f'output_filename = {output_filename:s}')
+    print(f'output_filename = {output_filename:s}', flush=True)
 
     # Init output dict
     output_dict = {}
@@ -93,7 +93,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
 
     print('\nGraph generated')
     print(f"  - {graph.number_of_nodes():d} nodes")
-    print(f"  - {graph.number_of_edges():d} edges")
+    print(f"  - {graph.number_of_edges():d} edges", flush=True)
 
     # Run simulation
     # ==============
@@ -133,7 +133,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     delta = param_dict['simulation']['sir_params']['delta']
     init_event_list = sample_seeds(graph, delta=delta, max_date=start_day_str, verbose=verbose)
 
-    print('\nRun simulation...')
+    print('\nRun simulation...', flush=True)
     
     # Run SIR simulation
     sir_obj = SimulationSIR(graph, **param_dict['simulation']['sir_params'], verbose=verbose)
