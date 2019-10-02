@@ -340,18 +340,18 @@ class SimulationSIR(object):
 
         # Infection tracking: is_inf[node]=1 if node has been infected
         # (note that the node can be already recovered)
-        self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time infection of u occurred
-        self.is_inf = np.zeros(self.n_nodes, dtype='bool')                   # True if u infected
-        self.infector = np.nan * np.ones(self.n_nodes, dtype='int')          # node that infected u
-        self.num_child_inf = np.zeros(self.n_nodes, dtype='int')             # number of neighbors u infected
+        self.inf_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time infection of u_idx occurred
+        self.is_inf = np.zeros(self.n_nodes, dtype='bool')                   # True if u_idx infected
+        self.infector = -1 * np.ones(self.n_nodes, dtype='int')              # index of node that infected u_idx (if -1, then no infector)
+        self.num_child_inf = np.zeros(self.n_nodes, dtype='int')             # number of neighbors u_idx infected
 
         # Recovery tracking: is_rec[node]=1 if node is currently recovered
-        self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time recovery of u occured
-        self.is_rec = np.zeros(self.n_nodes, dtype='bool')                   # True if u recovered
+        self.rec_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time recovery of u_idx occured
+        self.is_rec = np.zeros(self.n_nodes, dtype='bool')                   # True if u_idx recovered
 
         # Treatment tracking: is_tre[node]=1 if node is currently treated
-        self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time treatment of u occured
-        self.is_tre = np.zeros(self.n_nodes, dtype='bool')                   # True if u treated
+        self.tre_occured_at = np.inf * np.ones(self.n_nodes, dtype='float')  # time treatment of u_idx occured
+        self.is_tre = np.zeros(self.n_nodes, dtype='bool')                   # True if u_idx treated
 
         # Conrol tracking
         self.old_lambdas = np.zeros(self.n_nodes, dtype='float')             # control intensity of prev iter
@@ -385,10 +385,10 @@ class SimulationSIR(object):
         self.inf_occured_at[u_idx] = time
         if self.initial_seed[u_idx]:
             # Handle initial seeds
-            self.infector[u_idx] = np.nan
+            self.infector[u_idx] = -1
         else:
             w_idx = self.node_to_idx[w]
-            self.infector[u_idx] = w
+            self.infector[u_idx] = w_idx
             self.num_child_inf[w_idx] += 1
             recovery_time_u = time + self.expo(self.delta)
             self.queue.push((u, 'rec', None), priority=recovery_time_u)
