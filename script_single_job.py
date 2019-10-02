@@ -159,7 +159,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     output_dict['infector'] = sir_obj.infector.tolist()
 
     country_list = np.zeros(sir_obj.n_nodes, dtype=object)
-    for u, d in sir_obj.G.nodes(data=T):
+    for u, d in sir_obj.G.nodes(data=True):
         country_list[sir_obj.node_to_idx[u]] = d['country']
     output_dict['country'] = country_list
 
