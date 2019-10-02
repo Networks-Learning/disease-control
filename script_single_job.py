@@ -108,7 +108,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
 
     print('\nSimulation parameters')
     print(f'  - start day: {start_day_str}')
-    print(f'  -   end day: {start_day_str}')
+    print(f'  -   end day: {end_day_str}')
     print(f'  - number of days to simulate: {max_time}')
     
     print('\nEpidemic parameters')
@@ -161,7 +161,7 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     country_list = np.zeros(sir_obj.n_nodes, dtype=object)
     for u, d in sir_obj.G.nodes(data=True):
         country_list[sir_obj.node_to_idx[u]] = d['country']
-    output_dict['country'] = country_list
+    output_dict['country'] = country_list.tolist()
 
     node_district_arr = np.zeros(sir_obj.n_nodes, dtype='object')
     for node, data in sir_obj.G.nodes(data=True):
