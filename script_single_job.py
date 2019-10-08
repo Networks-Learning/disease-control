@@ -159,7 +159,9 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
 
     # Sample initial infected seeds at time t=0
     delta = param_dict['simulation']['sir_params']['delta']
-    init_event_list = sample_seeds(graph, delta=delta, max_date=start_day_str, verbose=verbose)
+    init_seed_method = param_dict['simulation']['init_seed_method']
+    init_event_list = sample_seeds(graph, delta=delta, method=init_seed_method,
+                                   max_date=start_day_str, verbose=verbose)
 
     # Set default stopping criteria
     stop_criteria = None
