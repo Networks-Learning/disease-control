@@ -50,7 +50,7 @@ def sample_seeds(graph, delta, method='data', n_seeds=None, max_date=None, verbo
     verbose : bool
         Indicate whether or not to print seed generation process.
     """
-    assert (n_seeds is None) or (max_date is None), "Either `n_seeds` or `max_date` must be given"
+    assert (n_seeds is not None) or (max_date is not None), "Either `n_seeds` or `max_date` must be given"
     
     if method == 'data':
 

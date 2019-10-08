@@ -134,11 +134,15 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
     sim_timedelta = pd.to_datetime(end_day_str) - pd.to_datetime(start_day_str)
     max_time = sim_timedelta.days
 
+    init_seed_method = param_dict['simulation']['init_seed_method']
+    init_seed_num = param_dict['simulation'].get('n_seeds')
+
     print('\nSimulation parameters')
     print(f'  - start day: {start_day_str}')
     print(f'  -   end day: {end_day_str}')
     print(f'  - number of days to simulate: {max_time}')
-    print(f"  - init seed method: {param_dict['simulation']['init_seed_method']}")
+    print(f"  - init seed method: {init_seed_method}")
+    print(f"  - init seed num: {init_seed_num}")
     
     print('\nEpidemic parameters')
     for key, val in param_dict['simulation']['sir_params'].items():
@@ -160,8 +164,7 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
 
     # Sample initial infected seeds at time t=0
     delta = param_dict['simulation']['sir_params']['delta']
-    init_seed_method = param_dict['simulation']['init_seed_method']
-    init_seed_num = param_dict['simulation'].get('n_seeds')
+
     init_event_list = sample_seeds(graph, delta=delta,
                                    method=init_seed_method,
                                    n_seeds=init_seed_num,
