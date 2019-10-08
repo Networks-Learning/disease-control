@@ -13,37 +13,60 @@ from lib.dynamics import sample_seeds
 from lib.settings import DATA_DIR
 
 
-def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verbose=False):
+def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=None, verbose=False):
     """
     Run a single SIR simulation based on the parameters in `param_filename` inside directory
-    `exp_dir` and output a summary into `output_filename`.
+    `exp_dir` and output a summary into `output_filename`. Uses the random seed at index `net_idx`
+    to generate a network.
 
     stdout and stderr can be redirected to files `stdout` and `stderr`.
 
     The parameter file is supposed to be a json file with the following format:
     ```
     {
+        
         network : { (Network model parameters)
-            n_nodes : int. Number of nodes desired in the network
-            p_in : float. Intra-district probability
-            p_out : float. Inter-district probability
-            seed : int. Random seed for reproducibility
+            n_nodes : int
+                Number of nodes desired in the network
+            p_in : float
+                Intra-district probability
+            p_out : dict of float
+                Inter-district probability per country, keyed by country name, with the additional
+                key 'inter-country' for between-country edges
+            seed_list : list. List of random seeds for reproducibility
         },
+        
         simulation : { (SIR simulation parameters)
-            start_day_str : str. Starting day of the simulation. Used to sample seeds from the 
-                Ebola dataset. Formated as 'YYYY-MM-DD'.
-            end_day_str : str. Ending day of the simulation.
+            start_day_str : str
+                Starting day of the simulation, formated as 'YYYY-MM-DD'. Used to sample seeds
+                from the Ebola dataset.
+            end_day_str : str
+                Ending day of the simulation.
             sir_params : { (Parameters of the SIR model)
-                beta : float. Infection rate
-                delta : float. Recovery rate (spontaneous)
-                gamma : float. Reduction of infectivity under treatement
-                rho : float. ecovery rate under treatement
+                beta : float
+                    Infection rate
+                delta : float
+                    Recovery rate (spontaneous)
+                gamma : float
+                    Reduction of infectivity under treatement
+                rho : float
+                    Recovery rate under treatement
             },
-            policy_name : str. Name of the Policy.
+            policy_name : str
+                Name of the Policy.
             policy_params : { (Parameters of the Policy)
                 (depend on the policy)
             }
-        }
+        },
+        
+        job_type : str (optional)
+            One the predefined job types. By default, perform a standard simulation following all
+            the given parameters. Other job types are the following:
+            - 'stop_after_seeds':
+                Only perform the simulation on the seeds ego-network and stop once all seeds are
+                recovered or once their neighbors are all infected. This job is performed to assess
+                the basic reproduction number of the epidemic given the current parameters.
+
     }
     ```
 
@@ -83,11 +106,16 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     print('\nGENERATE NETWORK')
     print('================')
 
+    # Extract random seed from list
+    net_seed = param_dict['network']['seed_list'][net_idx]
+    param_dict['network']['seed'] = net_seed
+    del param_dict['network']['seed_list']
+
     print('\nNetwork parameters')
     print(f"  - n_nodes = {param_dict['network']['n_nodes']:d}")
     print(f"  - p_in = {param_dict['network']['p_in']:.2e}")
-    print(f"  - p_out = {param_dict['network']['p_out']:.2e}")
-    print(f"  - seed = {param_dict['network']['seed']}")
+    print(f"  - p_out = {param_dict['network']['p_out']}")
+    print(f"  - seed = {net_seed:d}")
 
     graph = make_ebola_network(**param_dict['network'])
 
@@ -133,13 +161,33 @@ def run(exp_dir, param_filename, output_filename, stdout=None, stderr=None, verb
     delta = param_dict['simulation']['sir_params']['delta']
     init_event_list = sample_seeds(graph, delta=delta, max_date=start_day_str, verbose=verbose)
 
+    # Set default stopping criteria
+    stop_criteria = None
+
+    # Modify parameters for special job types
+    if param_dict.get('job_type') == 'stop_after_seeds':
+        # Extract ego-network of seeds
+        seed_node_list = np.array(list(set([event[0] for event, _ in init_event_list])))
+        seed_neighbs_list = np.hstack([list(graph.neighbors(u)) for u in seed_node_list])
+        graph = nx.subgraph(graph, np.hstack((seed_node_list, seed_neighbs_list)))
+        
+        # Define stop_criteria
+        def stop_criteria(sir_obj):
+            seed_node_indices = np.array([sir_obj.node_to_idx[u] for u in seed_node_list])
+            seed_neighbs_indices = np.array([sir_obj.node_to_idx[u] for u in seed_neighbs_list])
+            all_seeds_rec = np.all(sir_obj.is_rec[seed_node_indices])
+            all_neighbors_inf = np.all(sir_obj.is_inf[seed_neighbs_indices])
+            return all_seeds_rec or all_neighbors_inf
+
     print('\nRun simulation...', flush=True)
     
     # Run SIR simulation
     sir_obj = SimulationSIR(graph, **param_dict['simulation']['sir_params'], verbose=verbose)
     sir_obj.launch_epidemic(init_event_list=init_event_list, max_time=max_time,
                             policy=param_dict['simulation']['policy_name'],
-                            policy_dict=param_dict['simulation']['policy_params'])
+                            policy_dict=param_dict['simulation']['policy_params'],
+                            stop_criteria=stop_criteria
+                            )
 
     # Post-simulation summarization and output
     # ========================================
@@ -182,16 +230,26 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dir', dest='dir', type=str,
                         required=True, help="Working directory")
+    
+    parser.add_argument('-i', '--netidx', dest='net_idx', type=int,
+                        required=True, help="Network index to use (in parameter file)")
+
     parser.add_argument('-p', '--params', dest='param_filename', type=str,
                         required=False, default='params.json',
                         help="Input parameter file (JSON)")
     parser.add_argument('-o', '--outfile', dest='output_filename', type=str,
                         required=False, default='output.json',
                         help="Output file (JSON)")
+    
     parser.add_argument('-v', '--verbose', dest='verbose', action="store_true",
                         required=False, default=False,
                         help="Print behavior")
     args = parser.parse_args()
 
-    run(exp_dir=args.dir, param_filename=args.param_filename, output_filename=args.output_filename,
-        verbose=args.verbose)
+    run(
+        exp_dir=args.dir,
+        param_filename=args.param_filename,
+        output_filename=args.output_filename,
+        net_idx=args.net_idx,
+        verbose=args.verbose
+    )

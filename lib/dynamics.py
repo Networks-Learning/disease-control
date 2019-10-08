@@ -23,7 +23,7 @@ from . import maxcut
 from .settings import DATA_DIR
 
 
-def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
+def sample_seeds(graph, delta, method='data', beta=None, n_seeds=None, max_date=None, verbose=True):
     """
     Extract seeds from the Ebola cases datasets, by choosing either:
         * the first `n_seeds`.
@@ -43,42 +43,70 @@ def sample_seeds(graph, delta, n_seeds=None, max_date=None, verbose=True):
         Number of seeds to sample.
     max_date : str
         Maximum date to sample seeds (max_date is included in sampling).
+    method : str ('data' or 'random')
+        Method to sample the seeds. Can be one of:
+            - 'data': Use the seeds from the dataset and sample recovery time
+            - 'random': Sample random seeds along with their recovery time
     verbose : bool
         Indicate whether or not to print seed generation process.
     """
     assert (n_seeds is None) or (max_date is None), "Either `n_seeds` or `max_date` must be given"
-    # Load real data
-    df = pd.read_csv(os.path.join(DATA_DIR, 'ebola', 'rstb20160308_si_001_cleaned.csv'))
-    if n_seeds:
-        df = df.sort_values('infection_timestamp').iloc[:n_seeds]
-    elif max_date:
-        df = df[df.infection_date <= max_date].sort_values('infection_timestamp')
-    # Extract the seed disctricts
-    seed_names = list(df['district'])
-    # Extract district name for each node in the graph
-    node_names = np.array([u for u, d in graph.nodes(data=True)])
-    node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])
-    # Get last infection time of seeds (this is time zero for the simulation)
-    last_inf_time = df.infection_timestamp.max()
-    # Init list of seed events
-    init_event_list = list()
-    for _, row in df.iterrows():
-        inf_time = row['infection_timestamp']
-        # Sample recovery time
-        rec_time = inf_time + rd.expovariate(delta) - last_inf_time
-        # Ignore seed if recovered before time zero
-        if rec_time > 0:
-            # Randomly sample one node for each seed in the corresponding district
-            idx = np.random.choice(np.where(node_districts == row['district'])[0])
-            node = node_names[idx]
-            # Add infection event
-            # node to node infection flags initial seeds in code
-            init_event_list.append([(node, 'inf', node), 0.0])  # Gets infection at the start
-            # Add recovery event
+    
+    if method == 'data':
+
+        # Load real data
+        df = pd.read_csv(os.path.join(DATA_DIR, 'ebola', 'rstb20160308_si_001_cleaned.csv'))
+        if n_seeds:
+            df = df.sort_values('infection_timestamp').iloc[:n_seeds]
+        elif max_date:
+            df = df[df.infection_date <= max_date].sort_values('infection_timestamp')
+        # Extract the seed disctricts
+        seed_names = list(df['district'])
+        # Extract district name for each node in the graph
+        node_names = np.array([u for u, d in graph.nodes(data=True)])
+        node_districts = np.array([d['district'] for u, d in graph.nodes(data=True)])
+        # Get last infection time of seeds (this is time zero for the simulation)
+        last_inf_time = df.infection_timestamp.max()
+        # Init list of seed events
+        init_event_list = list()
+        for _, row in df.iterrows():
+            inf_time = row['infection_timestamp']
+            # Sample recovery time
+            rec_time = inf_time + rd.expovariate(delta) - last_inf_time
+            # Ignore seed if recovered before time zero
+            if rec_time > 0:
+                # Randomly sample one node for each seed in the corresponding district
+                idx = np.random.choice(np.where(node_districts == row['district'])[0])
+                node = node_names[idx]
+                # Add infection event
+                # node to node infection flags initial seeds in code
+                init_event_list.append([(node, 'inf', node), 0.0])  # Gets infection at the start
+                # Add recovery event
+                init_event_list.append([(node, 'rec', None), rec_time])
+                if verbose:
+                    print(f'Add seed {node} from district {row["district"]} - inf: {0.0}, rec: {rec_time} ')
+        return init_event_list
+
+    elif method == 'random':
+
+        if n_seeds is None:
+            raise ValueError("`n_seeds` must be provided for method `random`")
+        if beta is None:
+            raise ValueError("`beta` must be provided for method `random`")
+        if not isinstance(beta, float) or (beta <= 0.0):
+            raise ValueError("`beta` must be a positive float")
+        
+        init_event_list = list()
+        for _ in range(n_seeds):
+            node = np.random.choice(graph.nodes())
+            init_event_list.append([(node, 'inf', node), 0.0])
+            rec_time = rd.expovariate(delta)
             init_event_list.append([(node, 'rec', None), rec_time])
-            if verbose:
-                print(f'Add seed {node} from district {row["district"]} - inf: {0.0}, rec: {rec_time} ')
-    return init_event_list
+
+        return init_event_list
+
+    else:
+        raise ValueError('Invalid method.')
 
 
 class PriorityQueue(object):
@@ -729,7 +757,7 @@ class SimulationSIR(object):
         self.lp_d_S = d_S
         self.lp_d_S_idx = x_S
         
-    def launch_epidemic(self, init_event_list, max_time=np.inf, policy='NO', policy_dict={}):
+    def launch_epidemic(self, init_event_list, max_time=np.inf, policy='NO', policy_dict={}, stop_criteria=None):
         """
         Run the epidemic, starting from initial event list, for at most `max_time` units of time
         """
@@ -790,6 +818,10 @@ class SimulationSIR(object):
             # If no-one is infected, the epidemic is finished. Stop the simulation.
             if np.sum(self.is_inf * (1 - self.is_rec)) == 0:
                 break
+
+            if stop_criteria:
+                if stop_criteria(self):
+                    break
 
             # Update Control for infected nodes still untreated
             if not self.max_interventions_reached:

@@ -33,7 +33,7 @@ def compute_r0_per_country(inf_time_arr, infector_arr, country_arr):
     # Indices of infected nodes
     infected_node_indices = np.where(np.array(inf_time_arr) < np.inf)[0]
     # Initialize the list of number of secondary infections per country
-    country_count = defaultdict(list)
+    country_count = {country: list() for country in set(country_arr)}
     # For each infected node, add its number of secondary case to its country
     for u_idx in infected_node_indices:
         u_country = country_arr[u_idx]
@@ -41,5 +41,5 @@ def compute_r0_per_country(inf_time_arr, infector_arr, country_arr):
         country_count[u_country].append(inf_count)
     country_count = dict(country_count)
     # Compute R0 as the mean number of secondary case for each country
-    countru_r0_dict = {country: np.mean(count) for country, count in country_count.items()}
+    countru_r0_dict = {country: np.mean(count) if len(count) > 0 else 0.0 for country, count in country_count.items()}
     return countru_r0_dict
