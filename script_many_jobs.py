@@ -1,5 +1,6 @@
 from multiprocessing import Process, cpu_count
 import argparse
+import json
 import sys
 import os
 
@@ -25,21 +26,32 @@ if __name__ == "__main__":
 
     # Make pool args
     for param_filename in param_file_list:
-        for sim_idx in range(args.n_sims):
-            # Extract suffix from param_filename
-            suffix = '-'.join(param_filename.rstrip('.json').split('-')[1:])
-            # Add simulation infex
-            suffix += f'-sim{sim_idx:2>d}'
-            # Build output filename
-            output_filename = f'output-{suffix}.json'
-            # Redirect stdout
-            stdout = os.path.join(args.dir, f"stdout-{suffix:s}")
-            # Redirect stderr
-            stderr = os.path.join(args.dir, f"stderr-{suffix:s}")
-            # Add script arguments to the pool list
-            pool_args.append(
-                (args.dir, param_filename, output_filename, stdout, stderr)
-            )
+        
+        # Load parameters from file
+        param_filename_full = os.path.join(args.dir, param_filename)
+        if not os.path.exists(param_filename_full):
+            raise FileNotFoundError('Input file `{:s}` not found.'.format(param_filename_full))
+        with open(param_filename_full, 'r') as param_file:
+            param_dict = json.load(param_file)
+
+        for net_idx in range(len(param_dict['network']['seed_list'])):
+            for sim_idx in range(args.n_sims):
+                # Extract suffix from param_filename
+                suffix = '-'.join(param_filename.rstrip('.json').split('-')[1:])
+                # Add network index
+                suffix += f'-net{net_idx:2>d}'
+                # Add simulation infex
+                suffix += f'-sim{sim_idx:2>d}'
+                # Build output filename
+                output_filename = f'output-{suffix}.json'
+                # Redirect stdout
+                stdout = os.path.join(args.dir, f"stdout-{suffix:s}")
+                # Redirect stderr
+                stderr = os.path.join(args.dir, f"stderr-{suffix:s}")
+                # Add script arguments to the pool list
+                pool_args.append(
+                    (args.dir, param_filename, output_filename, net_idx, stdout, stderr)
+                )
 
     print(f"Start {len(pool_args):d} experiments on a pool of {args.n_workers:d} workers")
     print(f"=============================================================================")
