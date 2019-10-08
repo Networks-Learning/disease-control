@@ -23,7 +23,7 @@ from . import maxcut
 from .settings import DATA_DIR
 
 
-def sample_seeds(graph, delta, method='data', beta=None, n_seeds=None, max_date=None, verbose=True):
+def sample_seeds(graph, delta, method='data', n_seeds=None, max_date=None, verbose=True):
     """
     Extract seeds from the Ebola cases datasets, by choosing either:
         * the first `n_seeds`.
@@ -91,10 +91,6 @@ def sample_seeds(graph, delta, method='data', beta=None, n_seeds=None, max_date=
 
         if n_seeds is None:
             raise ValueError("`n_seeds` must be provided for method `random`")
-        if beta is None:
-            raise ValueError("`beta` must be provided for method `random`")
-        if not isinstance(beta, float) or (beta <= 0.0):
-            raise ValueError("`beta` must be a positive float")
         
         init_event_list = list()
         for _ in range(n_seeds):
