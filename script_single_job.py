@@ -205,6 +205,7 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
     output_dict['inf_occured_at'] = sir_obj.inf_occured_at.tolist()
     output_dict['rec_occured_at'] = sir_obj.rec_occured_at.tolist()
     output_dict['infector'] = sir_obj.infector.tolist()
+    output_dict['node_idx_pairs'] = [(int(u), u_idx) for u, u_idx in sir_obj.node_to_idx.items()]
 
     country_list = np.zeros(sir_obj.n_nodes, dtype=object)
     for u, d in sir_obj.G.nodes(data=True):
