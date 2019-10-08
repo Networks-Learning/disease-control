@@ -138,7 +138,7 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
     print(f'  - start day: {start_day_str}')
     print(f'  -   end day: {end_day_str}')
     print(f'  - number of days to simulate: {max_time}')
-    print(f'  - init seed method: {param_dict['simulation']['init_seed_method']}')
+    print(f"  - init seed method: {param_dict['simulation']['init_seed_method']}")
     
     print('\nEpidemic parameters')
     for key, val in param_dict['simulation']['sir_params'].items():
