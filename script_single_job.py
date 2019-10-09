@@ -13,6 +13,26 @@ from lib.dynamics import sample_seeds
 from lib.settings import DATA_DIR
 
 
+def update_fl_info(param_dict, sir_obj):
+    """
+    Update the front-loading parameters dict based on the current simulation to match the maximum
+    """
+    assert sir_obj.policy == 'SOC', "`update_fl_info` must be applied on `SOC` policy"
+    # Extract the maximum value of the control intensity
+    max_u = sir_obj.max_control_intensity
+    # Extract the number of treatements
+    n_treatement = np.sum(sir_obj.is_tre)
+    # Extract front-loading dict from param_dict
+    d = param_dict['simulation']['policy_params']['front-loading']
+    # Update the FL info dict
+    if d['max_lambda'] is None:
+        d['max_lambda'] = max_u
+        d['max_interventions'] = n_treatement
+    elif n_treatement > d['max_interventions']:
+        d['max_lambda'] = max_u
+        d['max_interventions'] = n_treatement
+
+
 def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=None, verbose=False):
     """
     Run a single SIR simulation based on the parameters in `param_filename` inside directory
@@ -99,6 +119,7 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
 
     # Init output dict
     output_dict = {}
+    output_dict['simulation_list'] = list()
 
     # Generate network of districts
     # =============================
@@ -152,15 +173,12 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
     
     print('\nPolicy parameters')
     for key, val in param_dict['simulation']['policy_params'].items():
-        print(f'  - {key:s}: {val:.2e}')
-    
-    # Reinitialize random seed for simulation
-    random.seed(None)
-    seed = random.randint(0, 2**32-1)
-    random.seed(seed)
-    print(f'Random seed: {seed}')
-    # Add to output dict
-    output_dict['simulation_seed'] = seed
+        if key == 'front-loading':
+            continue
+        elif isinstance(val, float):
+            print(f'  - {key:s}: {val:.2e}')
+        else:
+            print(f'  - {key:s}: {val:s}')
 
     # Sample initial infected seeds at time t=0
     delta = param_dict['simulation']['sir_params']['delta']
@@ -189,46 +207,75 @@ def run(exp_dir, param_filename, output_filename, net_idx, stdout=None, stderr=N
             all_neighbors_inf = np.all(sir_obj.is_inf[seed_neighbs_indices])
             return all_seeds_rec or all_neighbors_inf
 
-    print('\nRun simulation...', flush=True)
+    print('\nRun a single simulation for each policy:', flush=True)
     
-    # Run SIR simulation
-    sir_obj = SimulationSIR(graph, **param_dict['simulation']['sir_params'], verbose=verbose)
-    sir_obj.launch_epidemic(init_event_list=init_event_list, max_time=max_time,
-                            policy=param_dict['simulation']['policy_name'],
-                            policy_dict=param_dict['simulation']['policy_params'],
-                            stop_criteria=stop_criteria
-                            )
+    # Simulate every requested policy
+    for j, policy in enumerate(param_dict['simulation']['policy_list']):
+        print(f"=== Policy: {policy:s}...")
+        # ...for many trials
+        for i in range(param_dict['simulation']['num_sims']):
+            print(f"  - Simulation {i+1:d}/{param_dict['simulation']['num_sims']}")
 
-    # Post-simulation summarization and output
-    # ========================================
+            # Run SIR simulation
+            # ------------------
 
-    print('\nPOST-SIMULATION')
-    print('===============')
+            # Reinitialize random seed for simulation
+            random.seed(None)
+            seed = random.randint(0, 2**32-1)
+            random.seed(seed)
+            print(f'    - Random seed: {seed}')
+            # Add to output dict
+            
 
-    # Add init_event_list to output dict
-    # Format init_event_list node names into int to make the object json-able
-    for i, (e, t) in enumerate(init_event_list):
-        init_event_list[i] = ((int(e[0]), e[1], int(e[2]) if e[2] is not None else None), float(t))
-    output_dict['init_event_list'] = init_event_list
+            sir_obj = SimulationSIR(
+                graph, **param_dict['simulation']['sir_params'], verbose=verbose)
+            sir_obj.launch_epidemic(
+                init_event_list=init_event_list, max_time=max_time,
+                policy=param_dict['simulation']['policy_name'],
+                policy_dict=param_dict['simulation']['policy_params'],
+                stop_criteria=stop_criteria)
 
-    # Add other info on the events of each node
-    output_dict['inf_occured_at'] = sir_obj.inf_occured_at.tolist()
-    output_dict['rec_occured_at'] = sir_obj.rec_occured_at.tolist()
-    output_dict['infector'] = sir_obj.infector.tolist()
-    output_dict['node_idx_pairs'] = [(int(u), u_idx) for u, u_idx in sir_obj.node_to_idx.items()]
+            # Updat the front-loading parameters for subsequent simulations
+            if policy == 'SOC':
+                update_fl_info(param_dict, sir_obj)
+                print('    - Updated front-loading parameters:',
+                      param_dict['simulation']['policy_params']['front-loading'])
 
-    country_list = np.zeros(sir_obj.n_nodes, dtype=object)
-    for u, d in sir_obj.G.nodes(data=True):
-        country_list[sir_obj.node_to_idx[u]] = d['country']
-    output_dict['country'] = country_list.tolist()
+            # Post-simulation summarization and set output
+            # --------------------------------------------
 
-    node_district_arr = np.zeros(sir_obj.n_nodes, dtype='object')
-    for node, data in sir_obj.G.nodes(data=True):
-        node_idx = sir_obj.node_to_idx[node]
-        node_district_arr[node_idx] = data['district']
-    output_dict['district'] = node_district_arr.tolist()
+            # Init output dict for this simulation
+            out_sim_dict = {}
 
-    print('\nSave results...')
+            # Add seed
+            out_sim_dict['simulation_seed'] = seed
+
+            # Add init_event_list to output dict
+            # Format init_event_list node names into int to make the object json-able
+            for i, (e, t) in enumerate(init_event_list):
+                init_event_list[i] = ((int(e[0]), e[1], int(e[2]) if e[2] is not None else None), float(t))
+            out_sim_dict['init_event_list'] = init_event_list
+
+            # Add other info on the events of each node
+            out_sim_dict['inf_occured_at'] = sir_obj.inf_occured_at.tolist()
+            out_sim_dict['rec_occured_at'] = sir_obj.rec_occured_at.tolist()
+            out_sim_dict['infector'] = sir_obj.infector.tolist()
+            out_sim_dict['node_idx_pairs'] = [(int(u), u_idx) for u, u_idx in sir_obj.node_to_idx.items()]
+
+            country_list = np.zeros(sir_obj.n_nodes, dtype=object)
+            for u, d in sir_obj.G.nodes(data=True):
+                country_list[sir_obj.node_to_idx[u]] = d['country']
+            out_sim_dict['country'] = country_list.tolist()
+
+            node_district_arr = np.zeros(sir_obj.n_nodes, dtype='object')
+            for node, data in sir_obj.G.nodes(data=True):
+                node_idx = sir_obj.node_to_idx[node]
+                node_district_arr[node_idx] = data['district']
+            out_sim_dict['district'] = node_district_arr.tolist()
+
+            output_dict['simulation_list'].append(out_sim_dict)
+
+    print('\n\nSave results...')
 
     with open(os.path.join(exp_dir, output_filename), 'w') as output_file:
         json.dump(output_dict, output_file)
