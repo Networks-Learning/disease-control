@@ -13,7 +13,7 @@ class ModelPoissonRenewal:
         self.T = len(count_arr)-1 if T is None else T
 
     def log_likelihood(self, log_r):
-        lamb = torch.exp(log_r) * self.beta * self.count_cumsum
+        lamb = torch.exp(log_r) * self.beta * self.count_cumsum + 1e-10
         vals = self.count * torch.log(lamb) - torch.lgamma(self.count+1) - lamb
         return vals.sum()
 
