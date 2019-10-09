@@ -193,14 +193,18 @@ class ProgressPrinter(object):
                   '{I:.0f} inf., '
                   '{R:.0f} rec., '
                   '{Tt:.0f} tre ({TI:.2f}% of inf) | '
-                  'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}')
+                  # 'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq} | '
+                  'max_u {max_u:.2e}'
+                  )
     _PRINTLN_MSG = ('Epidemic stopped after {t:.2f} days '
                     '| '
                     '{S:.0f} sus., '
                     '{I:.0f} inf., '
                     '{R:.0f} rec., '
                     '{Tt:.0f} tre ({TI:.2f}% of inf) | '
-                    'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}')
+                    # 'I(q): {iq} R(q): {rq} T(q): {tq} |q|: {lq}'
+                    'max_u {max_u:.2e}'
+                    )
 
     def __init__(self, verbose=True):
         self.verbose = verbose
@@ -224,7 +228,7 @@ class ProgressPrinter(object):
             lq = len(sir_obj.queue)
 
             print('\r', self._PRINT_MSG.format(t=epitime, S=S, I=I, R=R, Tt=Tt, TI=TI,
-                                               iq=iq, rq=rq, tq=tq, lq=lq),
+                                               max_u=sir_obj.max_total_control_intensity),
                   sep='', end='', flush=True)
             self.last_print = time.time()
 
@@ -245,7 +249,8 @@ class ProgressPrinter(object):
         lq = len(sir_obj.queue)
 
         print('\r', self._PRINTLN_MSG.format(
-              t=epitime, S=S, I=I, R=R, Tt=Tt, TI=TI, iq=iq, rq=rq, tq=tq, lq=lq),
+              t=epitime, S=S, I=I, R=R, Tt=Tt, TI=TI,
+              max_u=sir_obj.max_total_control_intensity),
               sep='', end='\n', flush=True)
         self.last_print = time.time()
 
@@ -319,6 +324,9 @@ class SimulationSIR(object):
         # Control pre-computations
         self.lrsr_initiated = False   # flag for initial LRSR computation
         self.mcm_initiated = False    # flag for initial MCM computation
+
+        # Control statistics
+        self.max_total_control_intensity = 0.0
 
         # Printer for logging
         self._printer = ProgressPrinter(verbose=verbose)
@@ -516,7 +524,7 @@ class SimulationSIR(object):
 
         elif policy == 'TR-FL':
             return self._frontloadPolicy(
-                self.policy_dict['TR'], 
+                self.policy_dict['TR'],
                 self.policy_dict['TR'], time)
 
         elif policy == 'MN':
@@ -768,7 +776,7 @@ class SimulationSIR(object):
             self.eta = policy_dict['eta']
             self.q_x = policy_dict['q_x']
             self.q_lam = policy_dict['q_lam']
-            if policy_dict['lpsolver'] in self.AVAILABLE_LPSOLVERS:
+            if policy_dict.get('lpsolver') in self.AVAILABLE_LPSOLVERS:
                 self.lpsolver = policy_dict['lpsolver']
             else:
                 raise ValueError("Invalid `lpsolver`")
@@ -826,6 +834,8 @@ class SimulationSIR(object):
                     self._update_LP_sol()
                 for u_idx in controlled_nodes:
                     self._control(self.idx_to_node[u_idx], time, policy=self.policy)
+                self.max_total_control_intensity = max(
+                    self.max_total_control_intensity, self.old_lambdas.sum())
 
             self._printer.print(self, time)
 
