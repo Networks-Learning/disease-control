@@ -5,18 +5,14 @@
 import os
 import json
 import copy
-import itertools
-from collections import Counter, defaultdict
+import time
 import pandas as pd
-import networkx as nx
-import numpy as np
 from multiprocessing import cpu_count, Pool
 
 from lib.graph_generation import make_ebola_network
-from lib.dynamics import SimulationSIR, PriorityQueue
+from lib.dynamics import SimulationSIR
 from lib.dynamics import sample_seeds
-from lib.settings import DATA_DIR, PROJECT_DIR
-from lib import metrics
+from lib.settings import PROJECT_DIR
 
 
 # 1. Set simulation parameters
@@ -65,11 +61,11 @@ DEFAULT_POLICY_PARAMS = {
 }
 
 
-# 2. Run calibration
-# ==================
-
-
 def worker(policy, policy_params, n_sims, q_idx, net_idx, output_filename):
+    """
+    Run multiple simulation of a given policy and save the maximum sum of 
+    control rate observed for each simulation
+    """
     graph = make_ebola_network(n_nodes=n_nodes, p_in=p_in, p_out=p_out)
     print(f'graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges')
 
@@ -85,7 +81,9 @@ def worker(policy, policy_params, n_sims, q_idx, net_idx, output_filename):
     }
 
     for sim_idx in range(n_sims):
-         
+        
+        start_time = time.time()
+        
         sir_obj = SimulationSIR(graph, beta=beta, delta=delta, gamma=gamma, rho=rho, verbose=False)
         sir_obj.launch_epidemic(
             init_event_list=init_event_list,
@@ -97,7 +95,9 @@ def worker(policy, policy_params, n_sims, q_idx, net_idx, output_filename):
         res_dict['max_u'].append(float(sir_obj.max_total_control_intensity))
         res_dict['n_tre'].append(float(sir_obj.is_tre.sum()))
 
-        print(f"Finished: q_x:{q_idx} ({policy_params['q_x']}) net:{net_idx+1} sim:{sim_idx+1}/{n_sims}")
+        run_time = time.time() - start_time
+
+        print(f"Finished: q_x:{q_idx} ({policy_params['q_x']}) net:{net_idx+1} sim:{sim_idx+1}/{n_sims} in {run_time:2.f} sec")
     
     with open(output_filename, 'w') as f:
         json.dump(res_dict, f)
