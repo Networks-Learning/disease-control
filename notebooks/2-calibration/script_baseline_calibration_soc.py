@@ -15,17 +15,12 @@ from multiprocessing import cpu_count, Pool
 from lib.graph_generation import make_ebola_network
 from lib.dynamics import SimulationSIR, PriorityQueue
 from lib.dynamics import sample_seeds
-from lib.settings import DATA_DIR
+from lib.settings import DATA_DIR, PROJECT_DIR
 from lib import metrics
 
 
 # 1. Set simulation parameters
 # ============================
-
-q_x_range = [1.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 750.0, 1000.0]
-
-num_nets = 5
-num_sims = 5
 
 # Set simulation parameters
 start_day_str = '2014-01-01'
@@ -74,7 +69,7 @@ DEFAULT_POLICY_PARAMS = {
 # ==================
 
 
-def worker(policy, policy_params, n_sims, net_idx):
+def worker(policy, policy_params, n_sims, q_idx, net_idx, output_filename):
     graph = make_ebola_network(n_nodes=n_nodes, p_in=p_in, p_out=p_out)
     print(f'graph: {graph.number_of_nodes()} nodes, {graph.number_of_edges()} edges')
 
@@ -85,13 +80,13 @@ def worker(policy, policy_params, n_sims, net_idx):
         'max_u': list(), 
         'n_tre': list(), 
         'q_x': policy_params['q_x'],
+        'q_idx': q_idx,
         'net_idx': net_idx,
     }
 
     for sim_idx in range(n_sims):
-        print(f"\rSim {sim_idx+1}/{n_sims}", end="")
          
-        sir_obj = SimulationSIR(graph, beta=beta, delta=delta, gamma=gamma, rho=rho, verbose=True)
+        sir_obj = SimulationSIR(graph, beta=beta, delta=delta, gamma=gamma, rho=rho, verbose=False)
         sir_obj.launch_epidemic(
             init_event_list=init_event_list,
             max_time=max_days, 
@@ -99,23 +94,41 @@ def worker(policy, policy_params, n_sims, net_idx):
             policy_dict=policy_params
         )
         
-        res_dict['max_u'].append(sir_obj.max_total_control_intensity)
-        res_dict['n_tre'].append(sir_obj.is_tre.sum())
+        res_dict['max_u'].append(float(sir_obj.max_total_control_intensity))
+        res_dict['n_tre'].append(float(sir_obj.is_tre.sum()))
+
+        print(f"Finished: q_x:{q_idx} ({policy_params['q_x']}) net:{net_idx+1} sim:{sim_idx+1}/{n_sims}")
     
-    return res_dict
+    with open(output_filename, 'w') as f:
+        json.dump(res_dict, f)
 
+if __name__ == "__main__":
 
-args_list = list()
-for i, q_x in enumerate(q_x_range):
-    for net_idx in range(num_nets):
-        policy_params = copy.deepcopy(DEFAULT_POLICY_PARAMS)
-        policy_params['q_x'] = q_x
-        args_list.append(('SOC', policy_params, num_sims, net_idx))
-    
-pool = Pool(cpu_count()-1)
-res_list = pool.starmap(worker, args_list)
+    OUT_DIR = os.path.join(PROJECT_DIR, 'output', 'baseline-calibration-soc')
+    if not os.path.exists(OUT_DIR):
+        print(f"Create output directory: {OUT_DIR}")
+        os.mkdir(OUT_DIR)
 
-res_df = pd.DataFrame(res_list)
-res_df.to_csv('baseline-calibration-soc.csv', index=False)
+    Q_X_RANGE = [1.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 750.0, 1000.0]
 
+    NUM_NETS = 5
+    NUM_SIMS = 5
+
+    args_list = list()
+    for q_idx, q_x in enumerate(Q_X_RANGE):
+        for net_idx in range(NUM_NETS):
+            
+            policy_params = copy.deepcopy(DEFAULT_POLICY_PARAMS)
+            policy_params['q_x'] = q_x
+
+            output_filename = os.path.join(OUT_DIR, f"output-q{q_idx:d}-n{net_idx:d}.json")
+
+            args_list.append(('SOC', policy_params, NUM_SIMS, q_idx, net_idx, output_filename))
+        
+    n_procs = cpu_count()-1
+
+    print(f"\nRun {len(args_list)} jobs on {n_procs} processes...\n")
+
+    pool = Pool(n_procs)
+    pool.starmap(worker, args_list)
 
